@@ -2224,6 +2224,31 @@ export interface PrChecksResponse {
   lastCheckedAt: string;
 }
 
+export interface PrReviewThreadItem {
+  id: string;
+  author: string;
+  text: string;
+  source?: "github-review" | "github-review-comment";
+  externalId?: string;
+  reviewState?: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED";
+  createdAt: string;
+}
+
+export interface PrReviewsResponse {
+  snapshot: {
+    decision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+    items: Array<{
+      id: string;
+      author: { login: string };
+      body: string;
+      state?: string;
+      htmlUrl?: string;
+      createdAt: string;
+    }>;
+  };
+  comments: PrReviewThreadItem[];
+}
+
 export interface PrMetadataResponse {
   title: string;
   body: string;
@@ -2326,6 +2351,10 @@ export function refreshPrStatus(id: string, projectId?: string): Promise<PrRefre
 /** Fetch all PR checks for a task */
 export function fetchPrChecks(id: string, projectId?: string): Promise<PrChecksResponse> {
   return api<PrChecksResponse>(withProjectId(`/tasks/${id}/pr/checks`, projectId));
+}
+
+export function fetchPrReviews(id: string, projectId?: string): Promise<PrReviewsResponse> {
+  return api<PrReviewsResponse>(withProjectId(`/tasks/${id}/pr/reviews`, projectId));
 }
 
 // --- Issue Management API ---

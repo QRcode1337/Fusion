@@ -123,6 +123,32 @@
   opacity: 0.6;
 }
 
+.pr-panel-review-thread {
+  border: var(--btn-border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+}
+
+.pr-panel-review-thread-header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: space-between;
+}
+
+.pr-panel-review-item {
+  color: var(--text);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.pr-panel-review-item:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 @media (max-width: 768px) {
   .pr-panel-checks-rollup {
     align-items: flex-start;

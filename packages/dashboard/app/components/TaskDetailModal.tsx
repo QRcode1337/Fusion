@@ -3289,6 +3289,7 @@ export function TaskDetailContent({
                 projectId={projectId}
                 prInfo={task.prInfo}
                 automationStatus={task.status ?? null}
+                taskColumn={task.column}
                 autoMerge={settings?.autoMerge ?? false}
                 isManualPrFlow={isManualPrFlow}
                 prAuthAvailable={prAuthAvailable ?? false}

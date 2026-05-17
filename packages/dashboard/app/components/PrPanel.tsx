@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { GitPullRequest, ExternalLink, RefreshCw, Plus, MessageSquare, CircleDot, XCircle, GitMerge } from "lucide-react";
 import { getErrorMessage } from "@fusion/core";
-import { refreshPrStatus, type PrCheckStatus, type PrInfo, type PrRefreshResponse } from "../api";
+import { fetchPrReviews, refreshPrStatus, type PrCheckStatus, type PrInfo, type PrRefreshResponse, type PrReviewsResponse } from "../api";
 import { usePrChecksStream } from "../hooks/usePrChecksStream";
 import { PrChecksList } from "./PrChecksList";
 import type { ToastType } from "../hooks/useToast";
+import { linkifyFilePaths } from "../utils/filePathLinkify";
 import "./PrPanel.css";
 
 interface PrPanelProps {
@@ -12,6 +13,7 @@ interface PrPanelProps {
   projectId?: string;
   prInfo?: PrInfo;
   automationStatus?: string | null;
+  taskColumn?: string;
   autoMerge?: boolean;
   isManualPrFlow?: boolean;
   prAuthAvailable: boolean;
@@ -44,6 +46,7 @@ export function PrPanel({
   projectId,
   prInfo,
   automationStatus,
+  taskColumn,
   autoMerge = false,
   isManualPrFlow = false,
   prAuthAvailable,
@@ -53,6 +56,17 @@ export function PrPanel({
 }: PrPanelProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshState, setRefreshState] = useState<PrRefreshResponse | null>(null);
+  const [reviewsState, setReviewsState] = useState<PrReviewsResponse | null>(null);
+
+  useEffect(() => {
+    if (!prInfo) {
+      setReviewsState(null);
+      return;
+    }
+    void fetchPrReviews(taskId, projectId)
+      .then((data) => setReviewsState(data))
+      .catch(() => setReviewsState(null));
+  }, [taskId, projectId, prInfo]);
 
   const handleRefresh = useCallback(async () => {
     if (!prInfo) return;
@@ -62,6 +76,8 @@ export function PrPanel({
       const updated = await refreshPrStatus(taskId, projectId);
       setRefreshState(updated);
       onPrUpdated(updated.prInfo);
+      const latestReviews = await fetchPrReviews(taskId, projectId);
+      setReviewsState(latestReviews);
       addToast("PR status refreshed", "success");
     } catch (err) {
       addToast(getErrorMessage(err) || "Failed to refresh PR", "error");
@@ -125,7 +141,17 @@ export function PrPanel({
   const statusIcon = STATUS_ICONS[prInfo.status] ?? <CircleDot size={16} />;
   const blockingReasons = refreshState?.blockingReasons ?? [];
   const checks = refreshState?.checks;
-  const reviewDecision = refreshState?.reviewDecision ?? null;
+  const reviewDecision = refreshState?.reviewDecision ?? reviewsState?.snapshot.decision ?? prInfo.lastReviewDecision ?? null;
+  const groupedReviews = useMemo(() => {
+    const grouped = new Map<string, Array<PrReviewsResponse["snapshot"]["items"][number]>>();
+    for (const item of reviewsState?.snapshot.items ?? []) {
+      const key = item.author.login;
+      const list = grouped.get(key) ?? [];
+      list.push(item);
+      grouped.set(key, list);
+    }
+    return Array.from(grouped.entries());
+  }, [reviewsState]);
 
   const checkSummary = useMemo(() => {
     if (!checks) return "unknown" as const;
@@ -189,6 +215,30 @@ export function PrPanel({
             <span className="pr-panel-tone-muted">No reviews yet</span>
           )}
         </div>
+
+        <div className="pr-panel-section">
+          <div className="pr-panel-row-label">Reviews</div>
+          {groupedReviews.length === 0 ? <span className="pr-panel-tone-muted">No review comments synced yet</span> : null}
+          {groupedReviews.map(([reviewer, items]) => (
+            <div key={reviewer} className="pr-panel-review-thread">
+              <div className="pr-panel-review-thread-header">
+                <strong>@{reviewer}</strong>
+                <span className={`pr-panel-review-badge pr-panel-review-badge--${getReviewTone((items.at(-1)?.state as PrRefreshResponse["reviewDecision"]) ?? "REVIEW_REQUIRED")}`}>
+                  {items.at(-1)?.state ?? "COMMENTED"}
+                </span>
+              </div>
+              {items.map((item) => (
+                <a key={item.id} href={item.htmlUrl} target="_blank" rel="noreferrer" className="pr-panel-review-item">
+                  {linkifyFilePaths(item.body, { keyPrefix: item.id })}
+                </a>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {reviewDecision === "CHANGES_REQUESTED" && taskColumn === "todo" && (
+          <div className="pr-hint pr-hint--warning">Auto-moved to Todo — reviewer feedback ready</div>
+        )}
 
         {automationStatus === "merging-pr" && <div className="pr-hint pr-hint--info">fn is merging this pull request automatically.</div>}
         {automationStatus === "awaiting-pr-checks" && (

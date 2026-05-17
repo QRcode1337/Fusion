@@ -7,6 +7,8 @@ import type {
   BatchStatusResult,
   IssueInfo,
   PrInfo,
+  RunAuditEventInput,
+  Task,
   TaskStore,
 } from "@fusion/core";
 import { getCurrentRepo, isGhAuthenticated } from "@fusion/core";
@@ -19,7 +21,7 @@ import {
   rateLimited,
   unauthorized,
 } from "../api-error.js";
-import { GitHubClient, parseBadgeUrl } from "../github.js";
+import { GitHubClient, type PrReviewSnapshot, parseBadgeUrl } from "../github.js";
 import { GitHubIssueCommentService } from "../github-issue-comment.js";
 import { GitHubTrackingCommentService } from "../github-tracking-comments.js";
 import { GitHubTrackingStateService } from "../github-tracking-state.js";
@@ -1024,6 +1026,74 @@ export function appendBatchStatusError(results: BatchStatusResult, taskId: strin
   entry.stale = true;
 }
 
+async function syncPrReviewsToTask(store: TaskStore, task: Task, snapshot: PrReviewSnapshot): Promise<void> {
+  for (const item of snapshot.items) {
+    const isReviewItem = item.id.startsWith("gh-review-");
+    const source = isReviewItem ? "github-review" : "github-review-comment";
+    const externalId = String(item.githubCommentId ?? item.id);
+    const reviewState = item.state === "APPROVED" || item.state === "CHANGES_REQUESTED" || item.state === "COMMENTED"
+      ? item.state
+      : undefined;
+    const header = isReviewItem
+      ? `**Review by @${item.author.login} — ${item.state ?? "COMMENTED"}**`
+      : `**Inline comment by @${item.author.login}**`;
+    const body = `${header}\n\n${item.body}`;
+
+    await store.addComment(task.id, body, `github:${item.author.login}`, {
+      skipRefinement: true,
+      source,
+      externalId,
+      reviewState,
+    });
+  }
+}
+
+async function applyChangesRequestedTransition(
+  store: TaskStore,
+  task: Task,
+  snapshot: PrReviewSnapshot,
+  prInfo: PrInfo,
+): Promise<void> {
+  if (snapshot.decision !== "CHANGES_REQUESTED") return;
+  if (task.column !== "in-review") return;
+  if (task.prInfo?.lastReviewDecision === "CHANGES_REQUESTED") return;
+
+  const reviewItems = snapshot.items.filter((item) => item.id.startsWith("gh-review-") && item.state === "CHANGES_REQUESTED");
+  const commentItems = snapshot.items.filter((item) => item.id.startsWith("gh-comment-")).slice(-5);
+  const latestReview = reviewItems.at(-1);
+  const feedbackBody = [
+    `Reviewer requested changes for PR #${prInfo.number}.`,
+    latestReview ? `\nLatest review by @${latestReview.author.login}:\n${latestReview.body}` : "",
+    commentItems.length > 0
+      ? `\nRecent inline comments:\n${commentItems.map((item) => `- @${item.author.login}: ${item.body}`).join("\n")}`
+      : "",
+  ].join("\n").trim();
+
+  await store.writeTaskDocument(task.id, "review-feedback", feedbackBody || "Reviewer requested changes.", "system");
+  await store.moveTask(task.id, "todo", {
+    preserveProgress: true,
+    preserveWorktree: true,
+    moveSource: "engine",
+  });
+
+  if ("recordRunAuditEvent" in store && typeof store.recordRunAuditEvent === "function") {
+    const auditInput: RunAuditEventInput = {
+      taskId: task.id,
+      agentId: "dashboard-api",
+      runId: `dashboard-pr-refresh-${task.id}`,
+      domain: "database",
+      mutationType: "pr:changes-requested-auto-move",
+      target: task.id,
+      metadata: {
+        reviewDecision: snapshot.decision,
+        reviewCount: reviewItems.length,
+        commentCount: commentItems.length,
+      },
+    };
+    store.recordRunAuditEvent(auditInput);
+  }
+}
+
 export async function refreshPrInBackground(store: TaskStore, taskId: string, currentPrInfo: PrInfo, token?: string): Promise<void> {
   try {
     let owner: string;
@@ -1053,10 +1123,18 @@ export async function refreshPrInBackground(store: TaskStore, taskId: string, cu
     }
 
     const client = new GitHubClient(token);
+    const task = await store.getTask(taskId);
 
-    const prInfo = await client.getPrStatus(owner, repo, currentPrInfo.number);
-    prInfo.lastCheckedAt = new Date().toISOString();
+    const reviewSnapshot = await client.getPrReviewSnapshot(owner, repo, currentPrInfo.number);
+    const prInfo = {
+      ...reviewSnapshot.prInfo,
+      lastCheckedAt: new Date().toISOString(),
+      lastReviewDecision: reviewSnapshot.decision,
+    };
+
     await store.updatePrInfo(taskId, prInfo);
+    await syncPrReviewsToTask(store, task, reviewSnapshot);
+    await applyChangesRequestedTransition(store, task, reviewSnapshot, prInfo);
   } catch {
     // best-effort
   }
@@ -3208,23 +3286,26 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
         });
       }
 
-      // Fetch fresh PR status + merge readiness
+      // Fetch fresh PR status + merge readiness + reviews
       const client = new GitHubClient();
+      const reviewSnapshot = await client.getPrReviewSnapshot(owner, repo, task.prInfo.number);
       const mergeStatus = await client.getPrMergeStatus(owner, repo, task.prInfo.number);
 
       const prInfo = {
-        ...mergeStatus.prInfo,
+        ...reviewSnapshot.prInfo,
         lastCheckedAt: new Date().toISOString(),
+        lastReviewDecision: reviewSnapshot.decision,
       };
 
-      // Update stored PR info
       await scopedStore.updatePrInfo(task.id, prInfo);
+      await syncPrReviewsToTask(scopedStore, task, reviewSnapshot);
+      await applyChangesRequestedTransition(scopedStore, task, reviewSnapshot, prInfo);
 
       res.json({
         prInfo,
         mergeReady: mergeStatus.mergeReady,
         blockingReasons: mergeStatus.blockingReasons,
-        reviewDecision: mergeStatus.reviewDecision,
+        reviewDecision: reviewSnapshot.decision,
         checks: mergeStatus.checks,
         automationStatus: task.status ?? null,
       });
@@ -3239,6 +3320,62 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       } else {
         rethrowAsApiError(err);
       }
+    }
+  });
+
+  /**
+   * GET /api/tasks/:id/pr/reviews
+   * Fetch PR review snapshot and merged Fusion comment thread view.
+   */
+  router.get("/tasks/:id/pr/reviews", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const task = await scopedStore.getTask(req.params.id);
+
+      if (!task.prInfo) {
+        throw notFound("Task has no associated PR");
+      }
+
+      let owner: string;
+      let repo: string;
+      const badgeParsed = parseBadgeUrl(task.prInfo.url);
+      if (badgeParsed) {
+        owner = badgeParsed.owner;
+        repo = badgeParsed.repo;
+      } else {
+        const envRepo = process.env.GITHUB_REPOSITORY;
+        if (envRepo) {
+          const [o, r] = envRepo.split("/");
+          owner = o;
+          repo = r;
+        } else {
+          const gitRepo = getCurrentRepo(scopedStore.getRootDir());
+          if (!gitRepo) {
+            throw badRequest("Could not determine GitHub repository");
+          }
+          owner = gitRepo.owner;
+          repo = gitRepo.repo;
+        }
+      }
+
+      const client = new GitHubClient();
+      const snapshot = await client.getPrReviewSnapshot(owner, repo, task.prInfo.number);
+      const fusionThread = (task.comments ?? []).filter((comment) =>
+        comment.source === "github-review" || comment.source === "github-review-comment"
+      );
+
+      res.json({
+        snapshot,
+        comments: fusionThread,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        throw notFound(`Task ${req.params.id} not found`);
+      }
+      rethrowAsApiError(err);
     }
   });
 

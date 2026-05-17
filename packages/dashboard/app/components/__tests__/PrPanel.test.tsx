@@ -5,9 +5,10 @@ import { PrPanel } from "../PrPanel";
 vi.mock("../../api", () => ({
   refreshPrStatus: vi.fn(),
   fetchPrChecks: vi.fn(),
+  fetchPrReviews: vi.fn(),
 }));
 
-import { refreshPrStatus, fetchPrChecks } from "../../api";
+import { refreshPrStatus, fetchPrChecks, fetchPrReviews } from "../../api";
 
 const mockAddToast = vi.fn();
 const mockOnPrUpdated = vi.fn();
@@ -32,6 +33,7 @@ describe("PrPanel", () => {
       rollup: "unknown",
       lastCheckedAt: new Date().toISOString(),
     });
+    (fetchPrReviews as ReturnType<typeof vi.fn>).mockResolvedValue({ snapshot: { decision: null, items: [] }, comments: [] });
   });
 
   it("renders create button and calls onRequestCreatePr", () => {
