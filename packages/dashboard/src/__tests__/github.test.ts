@@ -1105,6 +1105,8 @@ describe("GitHubClient", () => {
           title: "Ready PR",
           state: "OPEN",
           reviewDecision: "APPROVED",
+          mergeable: "MERGEABLE",
+          mergeStateStatus: "CLEAN",
           baseRefName: "main",
           headRefName: "fusion/fn-093",
         })
@@ -1116,6 +1118,8 @@ describe("GitHubClient", () => {
       const result = await client.getPrMergeStatus("owner", "repo", 42);
 
       expect(result.mergeReady).toBe(true);
+      expect(result.mergeable).toBe("clean");
+      expect(result.prInfo.mergeable).toBe("clean");
       expect(result.blockingReasons).toEqual([]);
       expect(result.checks).toEqual([
         {
@@ -1128,6 +1132,44 @@ describe("GitHubClient", () => {
         },
         { name: "lint", required: true, state: "success", detailsUrl: undefined, startedAt: undefined, completedAt: undefined },
       ]);
+    });
+
+    it("maps DIRTY merge-state to conflicting even when mergeable is unknown", async () => {
+      mockRunGhJsonAsync
+        .mockResolvedValueOnce({
+          number: 42,
+          url: "https://github.com/owner/repo/pull/42",
+          title: "Dirty PR",
+          state: "OPEN",
+          reviewDecision: "APPROVED",
+          mergeable: "UNKNOWN",
+          mergeStateStatus: "DIRTY",
+          baseRefName: "main",
+          headRefName: "fusion/fn-093",
+        })
+        .mockResolvedValueOnce([{ name: "ci", state: "SUCCESS" }]);
+
+      const result = await client.getPrMergeStatus("owner", "repo", 42);
+      expect(result.mergeable).toBe("conflicting");
+      expect(result.prInfo.mergeable).toBe("conflicting");
+    });
+
+    it("maps missing mergeability fields to unknown", async () => {
+      mockRunGhJsonAsync
+        .mockResolvedValueOnce({
+          number: 42,
+          url: "https://github.com/owner/repo/pull/42",
+          title: "Unknown PR",
+          state: "OPEN",
+          reviewDecision: "APPROVED",
+          baseRefName: "main",
+          headRefName: "fusion/fn-093",
+        })
+        .mockResolvedValueOnce([{ name: "ci", state: "SUCCESS" }]);
+
+      const result = await client.getPrMergeStatus("owner", "repo", 42);
+      expect(result.mergeable).toBe("unknown");
+      expect(result.prInfo.mergeable).toBe("unknown");
     });
 
     it("falls back to GraphQL API when gh CLI merge-status lookup fails and token is available", async () => {
@@ -1144,6 +1186,8 @@ describe("GitHubClient", () => {
                 title: "Fallback PR",
                 state: "OPEN",
                 reviewDecision: null,
+                mergeable: "CONFLICTING",
+                mergeStateStatus: "DIRTY",
                 baseRefName: "main",
                 headRefName: "fusion/fn-093",
                 comments: { totalCount: 0 },
@@ -1196,6 +1240,8 @@ describe("GitHubClient", () => {
       const result = await clientWithToken.getPrMergeStatus("owner", "repo", 42);
 
       expect(result.mergeReady).toBe(true);
+      expect(result.mergeable).toBe("conflicting");
+      expect(result.prInfo.mergeable).toBe("conflicting");
       expect(result.checks).toEqual([
         {
           name: "ci",

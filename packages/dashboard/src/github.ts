@@ -1,4 +1,4 @@
-import type { IssueInfo, PrInfo, TaskReviewData, TaskReviewItem, TaskReviewSummary } from "@fusion/core";
+import type { IssueInfo, PrConflictState, PrInfo, TaskReviewData, TaskReviewItem, TaskReviewSummary } from "@fusion/core";
 import {
   isGhAvailable,
   isGhAuthenticated,
@@ -156,6 +156,7 @@ export interface PrMergeStatus {
   prInfo: PrInfo;
   reviewDecision: ReviewDecision;
   checks: PrCheckStatus[];
+  mergeable: PrConflictState;
   mergeReady: boolean;
   blockingReasons: string[];
 }
@@ -197,6 +198,9 @@ interface GhReviewJson {
   url?: string | null;
 }
 
+type GhPrMergeable = "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+type GhPrMergeStateStatus = "CLEAN" | "DIRTY" | "BLOCKED" | "BEHIND" | "UNSTABLE" | "UNKNOWN" | "HAS_HOOKS";
+
 interface GhPrViewJson {
   id?: string;
   number: number;
@@ -205,6 +209,8 @@ interface GhPrViewJson {
   state: "OPEN" | "CLOSED" | "MERGED";
   isDraft?: boolean;
   reviewDecision?: ReviewDecision;
+  mergeable?: GhPrMergeable;
+  mergeStateStatus?: GhPrMergeStateStatus;
   baseRefName: string;
   headRefName: string;
   comments: Array<{
@@ -337,6 +343,25 @@ function normalizeCheckState(state: string | null | undefined): PrCheckState {
   }
 }
 
+function mapPrConflictState(
+  mergeable?: GhPrMergeable,
+  mergeStateStatus?: GhPrMergeStateStatus,
+): PrConflictState {
+  if (mergeStateStatus === "DIRTY" || mergeable === "CONFLICTING") {
+    return "conflicting";
+  }
+  if (mergeStateStatus === "BEHIND") {
+    return "behind";
+  }
+  if (mergeStateStatus === "BLOCKED") {
+    return "blocked";
+  }
+  if (mergeStateStatus === "CLEAN" || mergeable === "MERGEABLE") {
+    return "clean";
+  }
+  return "unknown";
+}
+
 function toPrInfo(input: {
   url: string;
   number: number;
@@ -346,6 +371,7 @@ function toPrInfo(input: {
   baseBranch: string;
   isDraft?: boolean;
   commentCount?: number;
+  mergeable?: PrConflictState;
   lastCommentAt?: string;
   lastCheckedAt?: string;
 }): PrInfo {
@@ -359,6 +385,7 @@ function toPrInfo(input: {
     commentCount: input.commentCount ?? 0,
     isDraft: input.isDraft,
     draft: input.isDraft,
+    mergeable: input.mergeable,
     lastCommentAt: input.lastCommentAt,
     lastCheckedAt: input.lastCheckedAt,
   };
@@ -1017,8 +1044,9 @@ export class GitHubClient {
     const pr = await runGhJsonAsync<GhPrViewJson>([
       "pr", "view", String(number),
       "--repo", `${resolved.owner}/${resolved.repo}`,
-      "--json", "number,url,title,state,isDraft,baseRefName,headRefName,reviewDecision",
+      "--json", "number,url,title,state,isDraft,baseRefName,headRefName,reviewDecision,mergeable,mergeStateStatus",
     ]);
+    const mergeable = mapPrConflictState(pr.mergeable, pr.mergeStateStatus);
     const checks = await runGhJsonAsync<GhPrCheckJson[]>([
       "pr", "checks", String(number),
       "--repo", `${resolved.owner}/${resolved.repo}`,
@@ -1035,6 +1063,7 @@ export class GitHubClient {
       baseBranch: pr.baseRefName,
       isDraft: pr.isDraft,
       commentCount: 0,
+      mergeable,
     });
     const normalizedChecks = checks.map((check) => ({
       name: check.name,
@@ -1054,6 +1083,7 @@ export class GitHubClient {
       prInfo,
       reviewDecision: pr.reviewDecision ?? null,
       checks: normalizedChecks,
+      mergeable,
       mergeReady: readiness.ready,
       blockingReasons: readiness.blockingReasons,
     };
@@ -1073,6 +1103,8 @@ export class GitHubClient {
               title
               state
               reviewDecision
+              mergeable
+              mergeStateStatus
               isDraft
               baseRefName
               headRefName
@@ -1121,6 +1153,8 @@ export class GitHubClient {
             title: string;
             state: "OPEN" | "CLOSED" | "MERGED";
             reviewDecision: ReviewDecision;
+            mergeable?: GhPrMergeable;
+            mergeStateStatus?: GhPrMergeStateStatus;
             isDraft?: boolean;
             baseRefName: string;
             headRefName: string;
@@ -1186,6 +1220,7 @@ export class GitHubClient {
       } satisfies PrCheckStatus];
     });
 
+    const mergeable = mapPrConflictState(pr.mergeable, pr.mergeStateStatus);
     const prInfo = toPrInfo({
       url: pr.url,
       number: pr.number,
@@ -1195,6 +1230,7 @@ export class GitHubClient {
       baseBranch: pr.baseRefName,
       isDraft: pr.isDraft,
       commentCount: pr.comments.totalCount,
+      mergeable,
     });
     const readiness = isPrMergeReady({
       status: prInfo.status,
@@ -1206,6 +1242,7 @@ export class GitHubClient {
       prInfo,
       reviewDecision: pr.reviewDecision,
       checks,
+      mergeable,
       mergeReady: readiness.ready,
       blockingReasons: readiness.blockingReasons,
     };
