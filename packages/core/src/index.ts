@@ -1098,3 +1098,14 @@ export type { StoredAuthCredential } from "./oauth-credential-interop.js";
 
 // ── Error helpers ─────────────────────────────────────────
 export { getErrorMessage } from "./error-message.js";
+
+// ── Secrets crypto ───────────────────────────────────────
+export {
+  createSecretCipher,
+  SecretCryptoError,
+  redactForLog,
+} from "./secrets-crypto.js";
+export type {
+  MasterKeyProvider,
+  EncryptedSecret,
+} from "./secrets-crypto.js";
