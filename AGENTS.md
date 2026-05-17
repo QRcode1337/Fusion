@@ -544,6 +544,7 @@ When debugging agent execution issues (agents stuck on "starting"), check these 
 14. **`[retry-burned] retry-burned { taskId, agentId, role, category, attempt, total, breakdown }`** — Unified retry-burn telemetry and retry-cap circuit-breaker context
 15. **`Worktree init command failed (first test run will likely fail): ...` task log entries** — FN-4834: when `worktreeInitCommand` fails, diagnostic stderr is now written to the entry `outcome` (stdout/spawnError fallback), so dashboard logs preserve init failure details without rerunning.
 16. **`[executor] FN-XXX: fn_task_done refused (<class>) — <reason>`** — FN-4851 refusal diagnostics for `summary-claims-incomplete`, `bulk-step-completion-without-review`, and `pending-code-review-revise`; all three consume the shared `taskDoneRetryCount` budget and escalate to `in-review` once retries are exhausted.
+17. **`[room-ambiguity] agent=<id> run=<id> room=<id> messageId=<id> branch=<resolved|clarification> candidates=<n>`** — Heartbeat room-thread ambiguity classifier trace for deictic follow-ups, including the deterministic branch and candidate count.
 
 ### Semaphore Resilience
 
@@ -667,6 +668,7 @@ The run-audit system records every mutation performed by the engine across four 
 - **Git** — worktree:create, commit:create, merge:resolve, etc.
 - **Filesystem** — file:write, prompt:write, attachment:create, secret:env-write, secret:env-write-skipped, secret:env-cleanup, secret:env-cleanup-skipped, etc.
 - **Sandbox** — backend lifecycle (`sandbox:prepare`, `sandbox:run`, `sandbox:failure`, `sandbox:fallback`) from `SandboxBackend` wiring in executor/merger/routine-runner.
+- **Database (`room:ambiguity:branch`)** — per-deictic room-message telemetry tagging ambiguity branch selection (`resolved` vs `clarification`) with room/message IDs, candidate count, and cue metadata (no plaintext content).
 
 Events are tied to specific run IDs for end-to-end traceability. See [docs/architecture.md](./docs/architecture.md) for the audit API reference.
 

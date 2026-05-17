@@ -108,6 +108,8 @@ exports[`agent-heartbeat procedure templates > keeps strict no-task procedure st
    process unread/pending messages before any other action; reply with
    reply_to_message_id when answering. If Pending Room Messages are present,
    review them in the prompt and use fn_post_room_message only when relevant.
+   When Room Ambiguity Notices appear, follow the resolve/clarify branch and do
+   not create tasks under clarification notices.
 3. **Wake delta** — read the Wake Delta block above. The wake reason is the
    highest-priority change for this heartbeat. If you were woken by a comment
    or a message, acknowledge it before doing anything else.
@@ -144,6 +146,8 @@ exports[`agent-heartbeat procedure templates > keeps strict task procedure stabl
    process unread/pending messages before any other action; reply with
    reply_to_message_id when answering. If Pending Room Messages are present,
    review them in the prompt and use fn_post_room_message only when relevant.
+   When Room Ambiguity Notices appear, follow the resolve/clarify branch and do
+   not create tasks under clarification notices.
 3. **Wake delta** — read the Wake Delta block above. The wake reason is the
    highest-priority change for this heartbeat. If you were woken by a comment
    or a message, acknowledge it before doing anything else.

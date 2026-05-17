@@ -188,6 +188,101 @@ describe("heartbeat room messages", () => {
     expect(sessionCapture.prompt).toContain("(10 more truncated)");
   });
 
+  it("adds resolved room ambiguity notice and emits resolved audit branch", async () => {
+    harness = await createHarness();
+    const room = harness.chatStore.createRoom({ name: "ambiguity-resolved", memberAgentIds: [harness.agentId] });
+
+    harness.chatStore.addRoomMessage(room.id, {
+      role: "user",
+      content: "we should create a follow-up task to capture the secrets-sync regression",
+    });
+    const deicticMessage = harness.chatStore.addRoomMessage(room.id, { role: "user", content: "Yeah create it" });
+
+    const monitor = new HeartbeatMonitor({
+      store: harness.agentStore,
+      taskStore: harness.taskStore,
+      rootDir: harness.rootDir,
+      chatStore: harness.chatStore,
+    });
+
+    const run = await monitor.executeHeartbeat({ agentId: harness.agentId, source: "timer" as any });
+
+    expect(sessionCapture.prompt).toContain("Room Ambiguity Notices:");
+    expect(sessionCapture.prompt).toContain("Resolved Referent: capture the secrets-sync regression");
+    expect(sessionCapture.prompt).toContain("echo this exact subject in your reply");
+
+    const auditEvents = harness.taskStore.getRunAuditEvents({ runId: run!.id });
+    const branchEvent = auditEvents.find((event) => event.mutationType === "room:ambiguity:branch" && event.target === deicticMessage.id);
+    expect(branchEvent?.metadata).toMatchObject({
+      branch: "resolved",
+      candidateCount: 1,
+      roomId: room.id,
+      agentId: harness.agentId,
+    });
+  });
+
+  it("adds clarification room ambiguity notice and emits clarification audit branch", async () => {
+    harness = await createHarness();
+    const room = harness.chatStore.createRoom({ name: "ambiguity-clarify", memberAgentIds: [harness.agentId] });
+
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "we should create a task for FN-1234" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "let's add a docs task" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "could we file a flaky-test task" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "/clear" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "done" });
+    const deicticMessage = harness.chatStore.addRoomMessage(room.id, { role: "user", content: "Yeah create it" });
+
+    const monitor = new HeartbeatMonitor({
+      store: harness.agentStore,
+      taskStore: harness.taskStore,
+      rootDir: harness.rootDir,
+      chatStore: harness.chatStore,
+    });
+
+    const run = await monitor.executeHeartbeat({ agentId: harness.agentId, source: "timer" as any });
+
+    expect(sessionCapture.prompt).toContain("Room Ambiguity Notices:");
+    expect(sessionCapture.prompt).toContain("Do NOT create a task or spawn work");
+    expect(sessionCapture.prompt).toContain(`Use reply_to_message_id = ${deicticMessage.id}`);
+    expect(sessionCapture.prompt).toContain("FN-1234");
+    expect(sessionCapture.prompt).toContain("docs task");
+
+    const auditEvents = harness.taskStore.getRunAuditEvents({ runId: run!.id });
+    const branchEvent = auditEvents.find((event) => event.mutationType === "room:ambiguity:branch" && event.target === deicticMessage.id);
+    expect(branchEvent?.metadata).toMatchObject({
+      branch: "clarification",
+      roomId: room.id,
+      agentId: harness.agentId,
+    });
+  });
+
+  it("locks low-confidence contract against duplicate task creation instructions", async () => {
+    harness = await createHarness();
+    const room = harness.chatStore.createRoom({ name: "ambiguity-contract", memberAgentIds: [harness.agentId] });
+
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "we should create a task for FN-1234" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "let's add a docs task" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "could we file a flaky-test task" });
+    harness.chatStore.addRoomMessage(room.id, { role: "user", content: "Yeah create it" });
+
+    const monitor = new HeartbeatMonitor({
+      store: harness.agentStore,
+      taskStore: harness.taskStore,
+      rootDir: harness.rootDir,
+      chatStore: harness.chatStore,
+    });
+
+    await monitor.executeHeartbeat({ agentId: harness.agentId, source: "timer" as any });
+
+    const postTool = sessionCapture.customTools.find((tool) => tool.name === "fn_post_room_message");
+    const createTool = sessionCapture.customTools.find((tool) => tool.name === "fn_task_create");
+    expect(postTool).toBeDefined();
+    expect(createTool).toBeDefined();
+
+    expect(sessionCapture.prompt).toContain("Do NOT create a task or spawn work");
+    expect(sessionCapture.prompt).not.toContain("Resolved Referent:");
+  });
+
   it("registers fn_post_room_message and posts through the real ChatStore under restrictive policy", async () => {
     harness = await createHarness({
       presetId: "approval-required",

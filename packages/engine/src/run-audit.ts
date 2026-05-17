@@ -186,7 +186,8 @@ export type DatabaseMutationType =
   | "agent:create:denied"
   | "agent:delete:requested"
   | "agent:delete:approved"
-  | "agent:delete:denied";
+  | "agent:delete:denied"
+  | "room:ambiguity:branch";
 
 // ── Filesystem mutation types ─────────────────────────────────────────────────
 
