@@ -11,6 +11,8 @@ import {
   type WorktreePool,
   classifyTaskWorktree,
   isInsideWorktreesDir,
+  removeWorktree,
+  RemovalReason,
 } from "./worktree-pool.js";
 import {
   NativeWorktreeBackend,
@@ -286,7 +288,14 @@ export async function acquireTaskWorktree(opts: AcquireTaskWorktreeOptions): Pro
           await store.logEntry(task.id, `Pool returned ${pooledClassification.classification} worktree (${pooledClassification.reason}); creating fresh worktree`, undefined, runContext);
           if (isInsideWorktreesDir(rootDir, worktreePath, settings)) {
             try {
-              await backend.remove(worktreePath, { rootDir, force: true, reason: RemovalReason.PoolCleanup, taskId: task.id });
+              await removeWorktree({
+                rootDir,
+                worktreePath,
+                settings,
+                reason: RemovalReason.PoolPrune,
+                taskId: task.id,
+                audit,
+              });
             } catch (removeErr) {
               logger?.warn(`${task.id}: failed to remove unusable pooled worktree ${worktreePath}: ${formatError(removeErr)}`);
             }
