@@ -1444,4 +1444,162 @@ describe("QuickChatFAB session-first UX", () => {
 
     expect(openFile).toHaveBeenCalledWith("packages/dashboard/app/components/QuickChatFAB.tsx", { line: undefined, col: undefined });
   });
+
+  describe("FN-4849 room switching", () => {
+    const room = {
+      id: "room-1",
+      name: "engineering",
+      slug: "engineering",
+      memberCount: 2,
+      createdAt: "2026-05-16T00:00:00.000Z",
+      updatedAt: "2026-05-16T00:00:03.000Z",
+    };
+
+    it("switching to a room renders room messages, not session messages", async () => {
+      const selectRoom = vi.fn();
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room],
+        roomsLoading: false,
+        roomsError: null,
+        activeRoom: room,
+        activeRoomMembers: [],
+        messages: [
+          { id: "room-msg-1", roomId: room.id, role: "assistant", content: "room msg 1", createdAt: "2026-05-16T00:00:01.000Z" },
+          { id: "room-msg-2", roomId: room.id, role: "user", content: "room msg 2", createdAt: "2026-05-16T00:00:02.000Z" },
+        ],
+        messagesLoading: false,
+        selectRoom,
+        createRoom: vi.fn(),
+        deleteRoom: vi.fn(),
+        sendRoomMessage: vi.fn(),
+        clearRoom: vi.fn(),
+        refreshRooms: vi.fn(),
+      });
+      mockFetchChatMessages.mockResolvedValueOnce({
+        messages: [{ id: "session-msg", sessionId: "session-model", role: "assistant", content: "hello from session", createdAt: "2026-05-16T00:00:00.000Z" }],
+      });
+
+      render(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+      const messages = await screen.findByTestId("quick-chat-messages");
+      expect(messages).toHaveTextContent("room msg 1");
+      expect(messages).toHaveTextContent("room msg 2");
+      expect(messages).not.toHaveTextContent("hello from session");
+      expect(screen.getByTestId("quick-chat-session-dropdown-trigger")).toHaveTextContent("#engineering");
+      expect(screen.getByTestId("quick-chat-input")).toHaveAttribute("placeholder", "Message #engineering");
+    });
+
+    it("sending while in a room routes to sendRoomMessage, not sendMessage", async () => {
+      const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: room, activeRoomMembers: [], messages: [], messagesLoading: false,
+        selectRoom: vi.fn(), createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage, clearRoom: vi.fn(), refreshRooms: vi.fn(),
+      });
+
+      render(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+      const input = await screen.findByTestId("quick-chat-input");
+      fireEvent.change(input, { target: { value: "room dispatch" } });
+      fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+      await waitFor(() => {
+        expect(sendRoomMessage).toHaveBeenCalledWith("room dispatch");
+      });
+      expect(mockStreamChatResponse).not.toHaveBeenCalled();
+    });
+
+    it("/clear while in a room calls clearRoom, not startFreshSession", async () => {
+      const clearRoom = vi.fn().mockResolvedValue(undefined);
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: room, activeRoomMembers: [], messages: [], messagesLoading: false,
+        selectRoom: vi.fn(), createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage: vi.fn(), clearRoom, refreshRooms: vi.fn(),
+      });
+
+      render(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+      const input = await screen.findByTestId("quick-chat-input");
+      fireEvent.change(input, { target: { value: "/clear" } });
+      fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+      await waitFor(() => {
+        expect(clearRoom).toHaveBeenCalledWith("room-1");
+      });
+      expect(mockCreateChatSession).not.toHaveBeenCalled();
+    });
+
+    it("composer is enabled in a room even without an activeSession", async () => {
+      mockFetchResumeChatSession.mockRejectedValueOnce(new Error("resume failed"));
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: room, activeRoomMembers: [], messages: [], messagesLoading: false,
+        selectRoom: vi.fn(), createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage: vi.fn(), clearRoom: vi.fn(), refreshRooms: vi.fn(),
+      });
+
+      render(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+      expect(await screen.findByTestId("quick-chat-input")).not.toBeDisabled();
+    });
+
+    it("switching back from a room to a session restores session messages", async () => {
+      const selectRoom = vi.fn();
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: room, activeRoomMembers: [],
+        messages: [{ id: "room-msg-1", roomId: room.id, role: "assistant", content: "room msg 1", createdAt: "2026-05-16T00:00:01.000Z" }],
+        messagesLoading: false,
+        selectRoom, createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage: vi.fn(), clearRoom: vi.fn(), refreshRooms: vi.fn(),
+      });
+      mockFetchChatMessages.mockResolvedValueOnce({
+        messages: [{ id: "session-msg", sessionId: "session-model", role: "assistant", content: "hello from session", createdAt: "2026-05-16T00:00:00.000Z" }],
+      });
+
+      const view = render(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+      fireEvent.click(await screen.findByTestId("quick-chat-session-dropdown-trigger"));
+      fireEvent.click(screen.getByTestId("quick-chat-session-option-session-model"));
+
+      await waitFor(() => {
+        expect(selectRoom).toHaveBeenCalledWith(null);
+      });
+
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: null, activeRoomMembers: [],
+        messages: [], messagesLoading: false,
+        selectRoom, createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage: vi.fn(), clearRoom: vi.fn(), refreshRooms: vi.fn(),
+      });
+      view.rerender(<QuickChatFAB addToast={vi.fn()} projectId="proj-1" />);
+      expect(await screen.findByTestId("quick-chat-messages")).toHaveTextContent("hello from session");
+    });
+
+    it("attachment-in-room is blocked with a warning toast", async () => {
+      const addToast = vi.fn();
+      const sendRoomMessage = vi.fn().mockResolvedValue(undefined);
+      mockUseAppSettings.mockReturnValue({ experimentalFeatures: { chatRooms: true } } as ReturnType<typeof useAppSettings>);
+      mockUseChatRooms.mockReturnValue({
+        rooms: [room], roomsLoading: false, roomsError: null, activeRoom: room, activeRoomMembers: [], messages: [], messagesLoading: false,
+        selectRoom: vi.fn(), createRoom: vi.fn(), deleteRoom: vi.fn(), sendRoomMessage, clearRoom: vi.fn(), refreshRooms: vi.fn(),
+      });
+
+      render(<QuickChatFAB addToast={addToast} projectId="proj-1" />);
+      fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+      const attachmentInput = document.querySelector(".quick-chat-attachment-input") as HTMLInputElement | null;
+      const input = screen.getByTestId("quick-chat-input");
+      const file = new File(["hi"], "note.txt", { type: "text/plain" });
+      expect(attachmentInput).not.toBeNull();
+      fireEvent.change(attachmentInput!, { target: { files: [file] } });
+      fireEvent.change(input, { target: { value: "try send" } });
+      fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+      expect(addToast).toHaveBeenCalledWith("Attachments are not supported in chat rooms yet", "warning");
+      expect(sendRoomMessage).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -1129,7 +1129,19 @@ export function QuickChatFAB({
   }, [chatMode, selectedAgentId, targetModelSelection]);
 
   const hasChatTarget = chatMode === "agent" ? Boolean(selectedAgentId) : Boolean(targetModelSelection);
-  const inputDisabled = !hasChatTarget || !activeSession;
+  const roomThreadActive = chatRoomsEnabled && Boolean(roomsState.activeRoom);
+  const displayedMessages = useMemo<ChatMessageInfo[]>(() => {
+    if (!roomThreadActive) {
+      return messages;
+    }
+    return roomsState.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      toolCalls: undefined,
+    }));
+  }, [messages, roomThreadActive, roomsState.messages]);
+  const inputDisabled = roomThreadActive ? false : (!hasChatTarget || !activeSession);
   const hasPersistedAgentSessionSelection = useMemo(
     () => Boolean(selectedAgentId) && sessions.some((session) => !session.modelProvider && !session.modelId && session.agentId === selectedAgentId),
     [selectedAgentId, sessions],
@@ -1578,16 +1590,16 @@ export function QuickChatFAB({
   }, [anchorToBottom]);
 
   useLayoutEffect(() => {
-    const sessionId = activeSession?.id ?? null;
+    const threadId = roomThreadActive ? (roomsState.activeRoom?.id ?? null) : (activeSession?.id ?? null);
     const previousState = previousOpenStateRef.current;
-    previousOpenStateRef.current = { isOpen, sessionId };
+    previousOpenStateRef.current = { isOpen, sessionId: threadId };
 
-    if (!isOpen || !sessionId) {
+    if (!isOpen || !threadId) {
       return;
     }
 
     const openingNow = !previousState.isOpen && isOpen;
-    const sessionChangedWhileOpen = previousState.isOpen && previousState.sessionId !== sessionId;
+    const sessionChangedWhileOpen = previousState.isOpen && previousState.sessionId !== threadId;
     if (!openingNow && !sessionChangedWhileOpen) {
       return;
     }
@@ -1596,7 +1608,7 @@ export function QuickChatFAB({
     if (!messagesEl) return;
 
     anchorToBottom(messagesEl);
-  }, [isOpen, activeSession?.id, anchorToBottom]);
+  }, [isOpen, activeSession?.id, anchorToBottom, roomThreadActive, roomsState.activeRoom?.id]);
 
   useEffect(() => {
     if (!isMobile || !isOpen || !activeSession) {
@@ -1633,7 +1645,7 @@ export function QuickChatFAB({
     if (!isUserScrollingRef.current) {
       scrollToBottom();
     }
-  }, [messages, streamingText, streamingThinking, isStreaming, isOpen, scrollToBottom]);
+  }, [displayedMessages, streamingText, streamingThinking, isStreaming, isOpen, roomThreadActive, scrollToBottom]);
 
   useEffect(() => {
     if (!activeSession?.id) {
@@ -1716,7 +1728,7 @@ export function QuickChatFAB({
   const showRoomGroups = chatRoomsEnabled && roomOptions.length > 0;
 
   const activeSessionLabel = useMemo(() => {
-    if (showRoomGroups && roomsState.activeRoom) {
+    if (showRoomGroups && roomThreadActive && roomsState.activeRoom) {
       return `#${roomsState.activeRoom.name}`;
     }
     const activeOption = sessionOptions.find((option) => option.id === activeSession?.id);
@@ -1727,7 +1739,7 @@ export function QuickChatFAB({
       return "Loading sessions…";
     }
     return "Select a session";
-  }, [activeSession?.id, roomsState.activeRoom, sessionOptions, sessionsLoading, showRoomGroups]);
+  }, [activeSession?.id, roomThreadActive, roomsState.activeRoom, sessionOptions, sessionsLoading, showRoomGroups]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -1763,7 +1775,7 @@ export function QuickChatFAB({
   }, [sessionMenuOpen]);
 
   const inputPlaceholder = useMemo(() => {
-    if (chatRoomsEnabled && roomsState.activeRoom) {
+    if (roomThreadActive && roomsState.activeRoom) {
       return `Message #${roomsState.activeRoom.name}`;
     }
     if (chatMode === "agent") {
@@ -1777,7 +1789,7 @@ export function QuickChatFAB({
       return `Message ${selectedModelTag}`;
     }
     return "Select a model to start chatting";
-  }, [chatMode, chatRoomsEnabled, roomsState.activeRoom?.name, selectedAgent, selectedModelTag]);
+  }, [chatMode, roomThreadActive, roomsState.activeRoom?.name, selectedAgent, selectedModelTag]);
 
   const handleSessionSwitch = useCallback((sessionId: string) => {
     const selectedSession = sessions.find((session) => session.id === sessionId);
@@ -1785,7 +1797,7 @@ export function QuickChatFAB({
       return;
     }
 
-    if (chatRoomsEnabled && roomsState.activeRoom) {
+    if (roomThreadActive) {
       roomsState.selectRoom(null);
     }
 
@@ -1808,7 +1820,7 @@ export function QuickChatFAB({
 
     void selectSession(selectedSession);
     setSessionMenuOpen(false);
-  }, [chatRoomsEnabled, markRead, roomsState, selectSession, sessions]);
+  }, [markRead, roomThreadActive, roomsState, selectSession, sessions]);
 
   const handleRoomSwitch = useCallback((roomId: string) => {
     const selectedRoom = roomsState.rooms.find((room) => room.id === roomId);
@@ -1926,9 +1938,14 @@ export function QuickChatFAB({
       return;
     }
 
+    if (roomThreadActive && attachmentsToSend.length > 0) {
+      addToast("Attachments are not supported in chat rooms yet", "warning");
+      focusComposerInput();
+      preserveComposerFocusRef.current = false;
+      return;
+    }
+
     if (trimmed === "/clear" || trimmed === "/new") {
-      stopStreaming();
-      clearPendingMessage();
       attachmentsToSend.forEach((attachment) => {
         if (attachment.previewUrl) {
           URL.revokeObjectURL(attachment.previewUrl);
@@ -1937,13 +1954,20 @@ export function QuickChatFAB({
       setPendingAttachments((previous) => previous.filter((attachment) => !attachmentsToSend.includes(attachment)));
 
       try {
-        if (chatMode === "model") {
+        if (roomThreadActive && roomsState.activeRoom?.id) {
+          await roomsState.clearRoom(roomsState.activeRoom.id);
+          setHelpMessageVisible(false);
+        } else if (chatMode === "model") {
+          stopStreaming();
+          clearPendingMessage();
           const parsed = parseModelSelection(resolvedModelSelection);
           if (!parsed) {
             return;
           }
           await startFreshSession(FN_AGENT_ID, parsed.modelProvider, parsed.modelId);
         } else if (selectedAgentId) {
+          stopStreaming();
+          clearPendingMessage();
           await startFreshSession(selectedAgentId);
         }
       } catch {
@@ -1957,7 +1981,11 @@ export function QuickChatFAB({
 
     try {
       setHelpMessageVisible(false);
-      await sendMessage(trimmed, attachmentsToSend.map((attachment) => attachment.file));
+      if (roomThreadActive) {
+        await roomsState.sendRoomMessage(trimmed);
+      } else {
+        await sendMessage(trimmed, attachmentsToSend.map((attachment) => attachment.file));
+      }
       attachmentsToSend.forEach((attachment) => {
         if (attachment.previewUrl) {
           URL.revokeObjectURL(attachment.previewUrl);
@@ -1978,6 +2006,8 @@ export function QuickChatFAB({
     inputDisabled,
     messageInput,
     resolvedModelSelection,
+    roomThreadActive,
+    roomsState,
     selectedAgentId,
     sendMessage,
     startFreshSession,
@@ -2492,7 +2522,7 @@ export function QuickChatFAB({
           <div className="quick-chat-panel-header">
             <div className="quick-chat-panel-title-wrap">
               <h3>Quick Chat</h3>
-              {chatRoomsEnabled && roomsState.activeRoom ? (
+              {roomThreadActive && roomsState.activeRoom ? (
                 <span className="quick-chat-model-tag" data-testid="quick-chat-room-tag" title={`#${roomsState.activeRoom.name}`}>
                   #{roomsState.activeRoom.name}
                 </span>
@@ -2553,7 +2583,7 @@ export function QuickChatFAB({
               <input
                 type="hidden"
                 data-testid="quick-chat-session-dropdown"
-                value={showRoomGroups && roomsState.activeRoom ? "" : activeSession?.id ?? ""}
+                value={showRoomGroups && roomThreadActive ? "" : activeSession?.id ?? ""}
                 readOnly
               />
               <button
@@ -2565,7 +2595,7 @@ export function QuickChatFAB({
                 data-testid="quick-chat-session-dropdown-trigger"
                 onClick={() => setSessionMenuOpen((current) => !current)}
               >
-                {chatRoomsEnabled && roomsState.activeRoom ? (
+                {roomThreadActive && roomsState.activeRoom ? (
                   <Hash size={16} aria-hidden="true" />
                 ) : activeSession?.modelProvider ? (
                   <ProviderIcon provider={activeSession.modelProvider} size="sm" />
@@ -2608,7 +2638,7 @@ export function QuickChatFAB({
                     </>
                   )}
                   {sessionOptions.map((sessionOption) => {
-                    const isActiveSession = roomsState.activeRoom === null && activeSession?.id === sessionOption.id;
+                    const isActiveSession = !roomThreadActive && activeSession?.id === sessionOption.id;
                     const session = sessions.find((item) => item.id === sessionOption.id);
                     const showUnreadDot = !isActiveSession && isUnread("direct", sessionOption.id, session?.lastMessageAt ?? session?.updatedAt);
                     return (
@@ -2717,9 +2747,9 @@ export function QuickChatFAB({
           <div className="quick-chat-panel-messages" ref={messagesRef} data-testid="quick-chat-messages" onScroll={updateScrollState}>
             {sessionsLoading ? (
               <div className="quick-chat-panel-empty">Loading conversation…</div>
-            ) : isStreaming ? (
+            ) : !roomThreadActive && isStreaming ? (
               <>
-                {messages.map((message: ChatMessageInfo) => (
+                {displayedMessages.map((message: ChatMessageInfo) => (
                   <QuickChatMessageItem
                     key={message.id}
                     message={message}
@@ -2767,13 +2797,35 @@ export function QuickChatFAB({
                   )}
                 </div>
               </>
-            ) : messagesLoading ? (
+            ) : roomThreadActive ? roomsState.messagesLoading ? (
               <div className="quick-chat-panel-empty">Loading conversation…</div>
-            ) : messages.length === 0 && !streamingText && !streamingThinking && !isStreaming && !helpMessageVisible ? (
+            ) : displayedMessages.length === 0 && !helpMessageVisible ? (
               <div className="quick-chat-panel-empty">No messages yet. Start the conversation!</div>
             ) : (
               <>
-                {messages.map((message: ChatMessageInfo) => (
+                {displayedMessages.map((message: ChatMessageInfo) => (
+                  <QuickChatMessageItem
+                    key={message.id}
+                    message={message}
+                    forcePlain={message.role !== "user" && plainTextMessageIds.has(message.id)}
+                    mentionAgentsByName={mentionAgentsByName}
+                    roomContext={roomContext}
+                    onToggleRender={toggleMessageRenderMode}
+                  />
+                ))}
+                {helpMessageVisible && (
+                  <div className="quick-chat-panel-message quick-chat-panel-message--received" data-testid="quick-chat-help-message">
+                    {renderAssistantMessageContent("Available commands:\n- `/new` or `/clear` — Clear conversation and start fresh\n- `/skill:{name}` — Use a specific skill\n- `/help` — Show this help")}
+                  </div>
+                )}
+              </>
+            ) : messagesLoading ? (
+              <div className="quick-chat-panel-empty">Loading conversation…</div>
+            ) : displayedMessages.length === 0 && !streamingText && !streamingThinking && !isStreaming && !helpMessageVisible ? (
+              <div className="quick-chat-panel-empty">No messages yet. Start the conversation!</div>
+            ) : (
+              <>
+                {displayedMessages.map((message: ChatMessageInfo) => (
                   <QuickChatMessageItem
                     key={message.id}
                     message={message}
@@ -3018,7 +3070,7 @@ export function QuickChatFAB({
                   )}
                 </div>
               )}
-              {pendingMessage && (
+              {!roomThreadActive && pendingMessage && (
                 <div className="chat-pending-message" data-testid="chat-pending-indicator">
                   <span>{`Queued: ${pendingPreview}`}</span>
                   <button
