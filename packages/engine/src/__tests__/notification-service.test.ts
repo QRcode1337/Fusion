@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import type { ChatRoomMessage, Message, NotificationProvider, Settings, Task } from "@fusion/core";
 import { NotificationService } from "../notification/notification-service.js";
 import { NtfyNotificationProvider } from "../notification/ntfy-provider.js";
+import { DEFAULT_NTFY_EVENTS } from "../notifier.js";
 import { schedulerLog } from "../logger.js";
 
 vi.mock("../logger.js", () => ({
@@ -583,6 +584,134 @@ describe("NotificationService", () => {
 
     await first.stop();
     await second.stop();
+  });
+
+  describe("stale-settings refresh for task lifecycle", () => {
+    function createStaleLifecycleStore() {
+      const listeners = new Map<string, Set<Listener>>();
+      let getSettingsCallCount = 0;
+      const getBucket = (event: string) => listeners.get(event) ?? new Set<Listener>();
+
+      return {
+        getSettings: vi.fn(async () => {
+          getSettingsCallCount += 1;
+          if (getSettingsCallCount === 1) {
+            return { ntfyEnabled: false, ntfyTopic: "" } as Settings;
+          }
+          return {
+            ntfyEnabled: true,
+            ntfyTopic: "fusion-test",
+            ntfyEvents: [...DEFAULT_NTFY_EVENTS],
+            ntfyDashboardHost: "http://localhost:4040",
+          } as Settings;
+        }),
+        getTask: vi.fn(async () => undefined),
+        on: vi.fn((event: string, listener: Listener) => {
+          const bucket = getBucket(event);
+          bucket.add(listener);
+          listeners.set(event, bucket);
+        }),
+        off: vi.fn((event: string, listener: Listener) => {
+          getBucket(event).delete(listener);
+        }),
+        emit(event: string, payload: unknown) {
+          for (const listener of getBucket(event)) {
+            void listener(payload);
+          }
+        },
+      };
+    }
+
+    it("refreshes stale disabled settings before in-review and merged notifications", async () => {
+      const store = createStaleLifecycleStore();
+      const sendNotification = vi.fn(async () => ({ success: true, providerId: "mock" }));
+      const service = new NotificationService(store as any);
+      service.registerProvider({ getProviderId: () => "mock", isEventSupported: () => true, sendNotification });
+      await service.start();
+
+      store.emit("task:moved", { task: task({ id: "FN-101" }), from: "in-progress", to: "in-review" });
+      await vi.waitFor(() => {
+        expect(sendNotification).toHaveBeenCalledWith(
+          "in-review",
+          expect.objectContaining({ taskId: "FN-101", event: "in-review" }),
+        );
+      });
+
+      store.emit("task:merged", {
+        task: task({ id: "FN-102" }),
+        branch: "fusion/fn-102",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      });
+      await vi.waitFor(() => {
+        expect(sendNotification).toHaveBeenCalledWith(
+          "merged",
+          expect.objectContaining({ taskId: "FN-102", event: "merged" }),
+        );
+      });
+    });
+
+    it("does not notify when merge result is not merged", async () => {
+      const store = createStaleLifecycleStore();
+      const sendNotification = vi.fn(async () => ({ success: true, providerId: "mock" }));
+      const service = new NotificationService(store as any);
+      service.registerProvider({ getProviderId: () => "mock", isEventSupported: () => true, sendNotification });
+      await service.start();
+
+      store.emit("task:merged", {
+        task: task({ id: "FN-103" }),
+        branch: "fusion/fn-103",
+        merged: false,
+        worktreeRemoved: true,
+        branchDeleted: false,
+      });
+      await Promise.resolve();
+
+      expect(sendNotification).not.toHaveBeenCalled();
+    });
+
+    it("does not notify for non-in-review moves even after stale-settings refresh", async () => {
+      const store = createStaleLifecycleStore();
+      const sendNotification = vi.fn(async () => ({ success: true, providerId: "mock" }));
+      const service = new NotificationService(store as any);
+      service.registerProvider({ getProviderId: () => "mock", isEventSupported: () => true, sendNotification });
+      await service.start();
+
+      store.emit("task:moved", { task: task({ id: "FN-104" }), from: "todo", to: "in-progress" });
+      await Promise.resolve();
+
+      expect(sendNotification).not.toHaveBeenCalled();
+    });
+
+    it("still notifies after a late settings:updated enable event", async () => {
+      const store = createStore({ ntfyEnabled: false, ntfyTopic: "" });
+      const sendNotification = vi.fn(async () => ({ success: true, providerId: "mock" }));
+      const service = new NotificationService(store as any);
+      service.registerProvider({ getProviderId: () => "mock", isEventSupported: () => true, sendNotification });
+      await service.start();
+
+      store.emit("settings:updated", {
+        settings: {
+          ntfyEnabled: true,
+          ntfyTopic: "fusion-test",
+          ntfyEvents: [...DEFAULT_NTFY_EVENTS],
+          ntfyDashboardHost: "http://localhost:4040",
+        } as Settings,
+        previous: {
+          ntfyEnabled: false,
+          ntfyTopic: "",
+        } as Settings,
+      });
+      store.emit("task:moved", { task: task({ id: "FN-105" }), from: "in-progress", to: "in-review" });
+
+      await vi.waitFor(() => {
+        expect(sendNotification).toHaveBeenCalledWith(
+          "in-review",
+          expect.objectContaining({ taskId: "FN-105", event: "in-review" }),
+        );
+      });
+    });
   });
 
   it("suppresses transient failed notification after Auto-recovered status clear", async () => {
