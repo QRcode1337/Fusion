@@ -98,6 +98,7 @@ export const DEFAULT_GLOBAL_SETTINGS = {
   persistAgentThinkingLogEphemeral: false,
   persistAgentThinkingLog: false,
   agentMemoryInclusionMode: "full",
+  secretsAccessPolicy: undefined,
   researchGlobalDefaults: {
     searchProvider: undefined,
     synthesisProvider: undefined,
