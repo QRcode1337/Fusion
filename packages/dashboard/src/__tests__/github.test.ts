@@ -1154,6 +1154,44 @@ describe("GitHubClient", () => {
       expect(result.prInfo.mergeable).toBe("conflicting");
     });
 
+    it("maps BEHIND merge-state to behind", async () => {
+      mockRunGhJsonAsync
+        .mockResolvedValueOnce({
+          number: 42,
+          url: "https://github.com/owner/repo/pull/42",
+          title: "Behind PR",
+          state: "OPEN",
+          reviewDecision: "APPROVED",
+          mergeStateStatus: "BEHIND",
+          baseRefName: "main",
+          headRefName: "fusion/fn-093",
+        })
+        .mockResolvedValueOnce([{ name: "ci", state: "SUCCESS" }]);
+
+      const result = await client.getPrMergeStatus("owner", "repo", 42);
+      expect(result.mergeable).toBe("behind");
+      expect(result.prInfo.mergeable).toBe("behind");
+    });
+
+    it("maps BLOCKED merge-state to blocked", async () => {
+      mockRunGhJsonAsync
+        .mockResolvedValueOnce({
+          number: 42,
+          url: "https://github.com/owner/repo/pull/42",
+          title: "Blocked PR",
+          state: "OPEN",
+          reviewDecision: "APPROVED",
+          mergeStateStatus: "BLOCKED",
+          baseRefName: "main",
+          headRefName: "fusion/fn-093",
+        })
+        .mockResolvedValueOnce([{ name: "ci", state: "SUCCESS" }]);
+
+      const result = await client.getPrMergeStatus("owner", "repo", 42);
+      expect(result.mergeable).toBe("blocked");
+      expect(result.prInfo.mergeable).toBe("blocked");
+    });
+
     it("maps missing mergeability fields to unknown", async () => {
       mockRunGhJsonAsync
         .mockResolvedValueOnce({
