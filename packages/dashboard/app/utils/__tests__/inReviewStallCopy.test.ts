@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getInReviewStallCopy, shouldShowInReviewStallBadge } from "../inReviewStallCopy";
+import { getInReviewStallCopy, getInReviewStallDeadlockCopy, shouldShowInReviewStallBadge } from "../inReviewStallCopy";
 
 describe("inReviewStallCopy", () => {
   it.each([
@@ -120,5 +120,17 @@ describe("inReviewStallCopy", () => {
     expect(copy.description).toBe("future reason");
     expect(copy.suggestedAction).toBe("Open the activity log for details.");
     expect(copy.badgeLabel).toBe("In-review stall");
+  });
+
+  it("returns deadlock disposition copy when paused reason indicates auto-dispose", () => {
+    const copy = getInReviewStallDeadlockCopy({
+      pausedReason: "in-review-stall-deadlock",
+      log: [],
+    } as any);
+
+    expect(copy).toMatchObject({
+      headline: "In-review deadlock auto-disposed",
+    });
+    expect(copy?.nextAction).toContain("unpause");
   });
 });

@@ -1,4 +1,4 @@
-import type { InReviewStallCode, InReviewStallSignal, Task } from "@fusion/core";
+import { IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX, type InReviewStallCode, type InReviewStallSignal, type Task } from "@fusion/core";
 
 import { MAX_AUTO_MERGE_RETRIES } from "../hooks/useBlockerFanout";
 
@@ -9,6 +9,12 @@ export interface InReviewStallCopy {
   description: string;
   suggestedAction: string;
   code: InReviewStallCode;
+}
+
+export interface InReviewStallDeadlockCopy {
+  headline: string;
+  description: string;
+  nextAction: string;
 }
 
 const BADGE_LABEL_BY_CODE: Record<InReviewStallCode, string> = {
@@ -84,6 +90,23 @@ export function getInReviewStallCopy(
 }
 
 const ACTIVE_MERGE_STATUSES: ReadonlySet<Task["status"]> = new Set(["merging", "merging-pr", "merging-fix"]);
+
+const IN_REVIEW_STALL_DEADLOCK_COPY: InReviewStallDeadlockCopy = {
+  headline: "In-review deadlock auto-disposed",
+  description:
+    "Self-healing paused this in-review task after the same stall repeated without progress. This prevents infinite merge-blocker churn.",
+  nextAction:
+    "Inspect the merge blocker/branch conflict, recover manually, then unpause to retry. If recovery needs extra implementation, create a follow-up with fn_task_refine.",
+};
+
+export function getInReviewStallDeadlockCopy(task: Pick<Task, "pausedReason" | "log">): InReviewStallDeadlockCopy | undefined {
+  if (task.pausedReason === "in-review-stall-deadlock") {
+    return IN_REVIEW_STALL_DEADLOCK_COPY;
+  }
+
+  const hasDeadlockLog = task.log?.some((entry) => entry.action.startsWith(IN_REVIEW_STALL_DEADLOCK_LOG_PREFIX)) ?? false;
+  return hasDeadlockLog ? IN_REVIEW_STALL_DEADLOCK_COPY : undefined;
+}
 
 export function shouldShowInReviewStallBadge(task: Pick<Task, "column" | "paused" | "inReviewStall" | "status">): boolean {
   if (task.column !== "in-review" || task.paused === true || task.inReviewStall == null) {
