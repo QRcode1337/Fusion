@@ -667,6 +667,13 @@ export function createTaskCreateTool(
             isError: true,
           };
         }
+        if (err instanceof Error && (err as { code?: string }).code === "SELF_DEFEATING_DEPENDENCY") {
+          return {
+            content: [{ type: "text" as const, text: `ERROR: ${err.message}` }],
+            details: {},
+            isError: true,
+          };
+        }
         throw err;
       }
     },

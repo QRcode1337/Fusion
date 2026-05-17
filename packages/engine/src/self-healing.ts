@@ -26,7 +26,7 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { getInReviewStallReason, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority } from "@fusion/core";
+import { detectSelfDefeatingDependency, getInReviewStallReason, getStalePausedReviewSignal, getTaskHardMergeBlocker, getTaskMergeBlocker, isEphemeralAgent, type AgentStore, type ChatStore, type MessageStore, type TaskStore, type Settings, type Task, type MergeDetails, type TaskPriority } from "@fusion/core";
 import type { MeshLeaseManager } from "./mesh-lease-manager.js";
 import { createLogger } from "./logger.js";
 import { RemovalReason, getRegisteredWorktreePaths, isUsableTaskWorktree, removeWorktree, resolveWorktreeBackend, scanIdleWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
@@ -472,6 +472,7 @@ export class SelfHealingManager {
       { name: "recover-running-on-inactive-tasks", fn: () => this.recoverAgentsRunningOnInactiveTasks().then(() => undefined) },
       { name: "recover-drifted-agent-task-links", fn: () => this.recoverDriftedAgentTaskLinks().then(() => undefined) },
       { name: "clear-stale-blocked-by", fn: () => this.clearStaleBlockedBy().then(() => undefined) },
+      { name: "reconcile-self-defeating-deps", fn: () => this.reconcileSelfDefeatingDependencies().then(() => undefined) },
       { name: "reclaim-self-owned-branch-conflicts", fn: () => this.reclaimSelfOwnedBranchConflicts().then(() => undefined) },
       { name: "reclaim-stale-active-branches", fn: () => this.reclaimStaleActiveBranches().then(() => undefined) },
       { name: "surface-in-review-stalls", fn: () => this.surfaceInReviewStalls().then(() => undefined) },
@@ -1045,6 +1046,7 @@ export class SelfHealingManager {
           { name: "recover-running-on-inactive-tasks", fn: () => this.recoverAgentsRunningOnInactiveTasks() },
           { name: "recover-drifted-agent-task-links", fn: () => this.recoverDriftedAgentTaskLinks() },
           { name: "clear-stale-blocked-by", fn: () => this.clearStaleBlockedBy() },
+          { name: "reconcile-self-defeating-deps", fn: () => this.reconcileSelfDefeatingDependencies() },
           { name: "reclaim-self-owned-branch-conflicts", fn: () => this.reclaimSelfOwnedBranchConflicts() },
           { name: "reclaim-stale-active-branches", fn: () => this.reclaimStaleActiveBranches() },
           { name: "surface-in-review-stalls", fn: () => this.surfaceInReviewStalls() },
@@ -2231,6 +2233,64 @@ export class SelfHealingManager {
       log.error(`Stale blockedBy sweep failed: ${errorMessage}`);
       return 0;
     }
+  }
+
+  async reconcileSelfDefeatingDependencies(): Promise<number> {
+    const targetColumns: Array<Task["column"]> = ["triage", "planning", "todo"];
+    let recovered = 0;
+
+    for (const column of targetColumns) {
+      let tasks: Task[] = [];
+      try {
+        tasks = await this.store.listTasks({ column, slim: true });
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log.warn(`reconcileSelfDefeatingDependencies: failed to list ${column} tasks: ${errorMessage}`);
+        continue;
+      }
+
+      for (const task of tasks) {
+        if (!task.dependencies.length) continue;
+
+        const match = detectSelfDefeatingDependency(task.title, task.dependencies);
+        if (!match) continue;
+
+        const originalDependencies = [...task.dependencies];
+        const nextDependencies = originalDependencies.filter((dep) => dep.toUpperCase() !== match.operandTaskId.toUpperCase());
+        if (nextDependencies.length === originalDependencies.length) continue;
+
+        try {
+          await this.store.updateTask(task.id, { dependencies: nextDependencies });
+          await this.store.logEntry(
+            task.id,
+            `Auto-reconciled self-defeating dependency: removed ${match.operandTaskId} (matched verb: "${match.matchedVerb}") from dependencies.`,
+          );
+
+          const auditor = createRunAuditor(this.store, {
+            runId: generateSyntheticRunId("self-heal-self-defeating-dep"),
+            agentId: "system:self-healing",
+            taskId: task.id,
+            phase: "reconcile-self-defeating-dep",
+          });
+          await auditor.database({
+            type: "task:auto-reconciled-self-defeating-dep",
+            target: task.id,
+            metadata: {
+              matchedVerb: match.matchedVerb,
+              operandTaskId: match.operandTaskId,
+              originalDependencies,
+              nextDependencies,
+            },
+          });
+          recovered++;
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          log.warn(`reconcileSelfDefeatingDependencies: failed for ${task.id}: ${errorMessage}`);
+        }
+      }
+    }
+
+    return recovered;
   }
 
   private async recordIntegrityAudit(taskId: string, mutationType: "task:finalize-unproven-blocked" | "task:integrity-reconcile-modified-files" | "task:integrity-warning", metadata: Record<string, unknown>): Promise<void> {

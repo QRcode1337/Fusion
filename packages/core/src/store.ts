@@ -684,6 +684,79 @@ function validateFileScopeInPromptContent(prompt: string): { valid: string[]; in
   return { valid, invalid };
 }
 
+export const SELF_DEFEATING_OPERATION_VERBS = [
+  "finalize", // Terminalize target task state
+  "diagnose", // Investigate/diagnose target task failure
+  "dispose", // Dispose terminal artifacts/state for target task
+  "unblock", // Remove blockers on target task
+  "manual recovery", // Explicit manual recovery operation
+  "recover", // Recover target task from failed/stuck state
+  "recovery", // Recovery operation on target task
+  "resolve", // Resolve target task conflict/failure
+  "archive", // Archive target task
+  "reclaim", // Reclaim target task ownership/artifacts
+  "clean", // Clean target task residual state
+  "cleanup", // Cleanup operation on target task
+  "fix", // Fix target task issue
+] as const satisfies ReadonlyArray<string>;
+
+export class SelfDefeatingDependencyError extends Error {
+  readonly code = "SELF_DEFEATING_DEPENDENCY" as const;
+
+  constructor(
+    readonly taskTitle: string,
+    readonly matchedVerb: string,
+    readonly operandTaskId: string,
+  ) {
+    super(`Task "${taskTitle}" operates on ${operandTaskId} (matched verb: "${matchedVerb}") and cannot also depend on it. A task whose job is to mutate another task into a terminal state must not be blocked by that task.`);
+    this.name = "SelfDefeatingDependencyError";
+  }
+}
+
+export function detectSelfDefeatingDependency(
+  title: string | undefined,
+  dependencies: readonly string[],
+): { matchedVerb: string; operandTaskId: string } | null {
+  const trimmedTitle = title?.trim();
+  if (!trimmedTitle) return null;
+
+  const normalizedDeps = new Set(
+    dependencies
+      .map((dep) => dep.trim().toUpperCase())
+      .filter((dep) => /^FN-\d+$/i.test(dep)),
+  );
+  if (normalizedDeps.size === 0) return null;
+
+  const titleFnIds = [...trimmedTitle.matchAll(/\bFN-(\d+)\b/gi)];
+  if (titleFnIds.length !== 1) return null;
+  const operandTaskId = `FN-${titleFnIds[0][1]}`;
+
+  let matchedVerb: string | null = null;
+  for (const verb of SELF_DEFEATING_OPERATION_VERBS) {
+    if (verb === "manual recovery") {
+      if (/\bmanual\s+recovery\b/i.test(trimmedTitle)) {
+        matchedVerb = verb;
+        break;
+      }
+      continue;
+    }
+
+    const escapedVerb = verb.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b${escapedVerb}\\b`, "i").test(trimmedTitle)) {
+      matchedVerb = verb;
+      break;
+    }
+  }
+
+  if (!matchedVerb) return null;
+  if (!normalizedDeps.has(operandTaskId.toUpperCase())) return null;
+
+  return {
+    matchedVerb,
+    operandTaskId,
+  };
+}
+
 export class TaskStore extends EventEmitter<TaskStoreEvents> {
   static async getOrCreateForProject(
     projectId?: string,
@@ -2855,6 +2928,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       throw new Error("Description is required and cannot be empty");
     }
 
+    const selfDefeatingDep = detectSelfDefeatingDependency(input.title, input.dependencies ?? []);
+    if (selfDefeatingDep) {
+      throw new SelfDefeatingDependencyError(
+        input.title?.trim() ?? "",
+        selfDefeatingDep.matchedVerb,
+        selfDefeatingDep.operandTaskId,
+      );
+    }
+
     // Determine if we should try to summarize the title
     const title = input.title?.trim() || undefined;
     const shouldSummarize =
@@ -2974,6 +3056,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   ): Promise<Task> {
     if (!input.description?.trim()) {
       throw new Error("Description is required and cannot be empty");
+    }
+
+    const selfDefeatingDep = detectSelfDefeatingDependency(input.title, input.dependencies ?? []);
+    if (selfDefeatingDep) {
+      throw new SelfDefeatingDependencyError(
+        input.title?.trim() ?? "",
+        selfDefeatingDep.matchedVerb,
+        selfDefeatingDep.operandTaskId,
+      );
     }
 
     const id = options.taskId.trim();

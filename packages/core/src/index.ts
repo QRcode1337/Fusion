@@ -124,7 +124,12 @@ export type {
   ResolveSecretAccessPolicyInput,
   ResolveSecretAccessPolicyDecision,
 } from "./secret-access-policy.js";
-export { TaskStore } from "./store.js";
+export {
+  TaskStore,
+  SELF_DEFEATING_OPERATION_VERBS,
+  detectSelfDefeatingDependency,
+  SelfDefeatingDependencyError,
+} from "./store.js";
 export {
   findDuplicateMatches,
   type DuplicateCandidate,
