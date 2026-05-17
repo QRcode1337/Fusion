@@ -3672,8 +3672,7 @@ export class TaskExecutor {
 
         const executorSystemPromptFinal = collapsePromptLayers(executorLayers);
 
-        // sessionFile must be let because it's destructured alongside session which is reassigned
-        // eslint-disable-next-line prefer-const
+        // sessionFile must be let because it's assigned before downstream retry-session reassignment.
         let session: AgentSession;
         let sessionFile: string | null | undefined;
         try {

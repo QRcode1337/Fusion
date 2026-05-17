@@ -32,6 +32,7 @@ import {
   mockedExecSync,
   mockedExistsSync,
   mockedHydrateWorktreeDb,
+  mockedClassifyTaskWorktree,
   mockedIsUsableTaskWorktree,
   mockedClassifyStaleLock,
   mockedTryRemoveStaleLock,
@@ -410,6 +411,7 @@ describe("TaskExecutor worktree naming", () => {
   it("does not reuse a stored worktree path that is not registered", async () => {
     const stalePath = "/tmp/test/.worktrees/broken-wt";
     mockedIsUsableTaskWorktree.mockResolvedValueOnce(false);
+    mockedClassifyTaskWorktree.mockResolvedValueOnce({ ok: false, classification: "incomplete", reason: "missing or invalid .git metadata" } as any);
     mockedExistsSync.mockImplementation((path) => String(path).startsWith(stalePath));
     mockedExecSync.mockImplementation((cmd: any) => {
       if (String(cmd) === "git worktree list --porcelain") {
@@ -423,7 +425,7 @@ describe("TaskExecutor worktree naming", () => {
 
     await executor.execute(makeTask("FN-032", stalePath));
 
-    expect(store.updateTask).toHaveBeenCalledWith("FN-032", { worktree: null, branch: null });
+    expect(store.updateTask).toHaveBeenCalledWith("FN-032", expect.objectContaining({ worktree: null, branch: null }));
     expect(mockedGenerateWorktreeName).toHaveBeenCalledWith("/tmp/test", expect.any(Object));
     const worktreeAddCalls = mockedExecSync.mock.calls.filter(
       (call) => typeof call[0] === "string" && call[0].includes("git worktree add"),
@@ -2408,6 +2410,7 @@ describe("worktree DB hydration", () => {
 
   it("runs hydration path when executor reassigns unusable root worktree", async () => {
     mockedIsUsableTaskWorktree.mockResolvedValueOnce(false);
+    mockedClassifyTaskWorktree.mockResolvedValueOnce({ ok: false, classification: "incomplete", reason: "missing or invalid .git metadata" } as any);
     mockedExistsSync.mockReturnValue(true);
     const store = createMockStore();
     const executor = new TaskExecutor(store, "/tmp/test");

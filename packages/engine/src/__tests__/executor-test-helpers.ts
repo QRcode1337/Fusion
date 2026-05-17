@@ -110,6 +110,7 @@ vi.mock("../worktree-pool.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../worktree-pool.js")>();
   return {
     ...actual,
+    classifyTaskWorktree: vi.fn().mockResolvedValue({ ok: true }),
     isUsableTaskWorktree: vi.fn().mockResolvedValue(true),
   };
 });
@@ -246,7 +247,7 @@ import { withRateLimitRetry } from "../rate-limit-retry.js";
 import { exec, execSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { hydrateWorktreeDb } from "../worktree-db-hydrate.js";
-import { isUsableTaskWorktree } from "../worktree-pool.js";
+import { classifyTaskWorktree, isUsableTaskWorktree } from "../worktree-pool.js";
 import { classifyStaleLock, tryRemoveStaleLock } from "../worktree-stale-lock.js";
 import { executingTaskLock } from "../active-session-registry.js";
 
@@ -261,6 +262,7 @@ export const mockedExecSync = vi.mocked(execSync);
 export const mockedExistsSync = vi.mocked(existsSync);
 export const mockedRealpathSync = vi.mocked(realpathSync);
 export const mockedHydrateWorktreeDb = vi.mocked(hydrateWorktreeDb);
+export const mockedClassifyTaskWorktree = vi.mocked(classifyTaskWorktree);
 export const mockedIsUsableTaskWorktree = vi.mocked(isUsableTaskWorktree);
 export const mockedClassifyStaleLock = vi.mocked(classifyStaleLock);
 export const mockedTryRemoveStaleLock = vi.mocked(tryRemoveStaleLock);
@@ -337,6 +339,12 @@ export function resetExecutorMocks() {
   mockedExec.mockReset();
   mockedExecSync.mockReset();
   mockedIsUsableTaskWorktree.mockResolvedValue(true);
+  mockedClassifyTaskWorktree.mockImplementation(async (rootDir: string, worktreePath: string) => {
+    const usable = await mockedIsUsableTaskWorktree(rootDir, worktreePath);
+    return usable
+      ? { ok: true }
+      : { ok: false, classification: "incomplete", reason: "missing or invalid .git metadata" };
+  });
   mockedClassifyStaleLock.mockReset();
   mockedTryRemoveStaleLock.mockReset();
   mockedClassifyStaleLock.mockResolvedValue({ kind: "fresh", reason: "fresh" } as any);

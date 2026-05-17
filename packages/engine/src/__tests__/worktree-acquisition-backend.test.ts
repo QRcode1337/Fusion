@@ -39,7 +39,12 @@ describe("acquireTaskWorktree backend wiring", () => {
 
   it("uses native backend by default and emits no worktrunk audit", async () => {
     execMock.mockResolvedValue({ stdout: "", stderr: "" });
-    const audit = { git: vi.fn().mockResolvedValue(undefined) };
+    const audit = {
+      git: vi.fn().mockResolvedValue(undefined),
+      database: vi.fn().mockResolvedValue(undefined),
+      filesystem: vi.fn().mockResolvedValue(undefined),
+      sandbox: vi.fn().mockResolvedValue(undefined),
+    };
 
     const result = await acquireTaskWorktree({
       task,
@@ -72,7 +77,12 @@ describe("acquireTaskWorktree backend wiring", () => {
       }
       return Promise.resolve({ stdout: "", stderr: "" });
     });
-    const audit = { git: vi.fn().mockResolvedValue(undefined) };
+    const audit = {
+      git: vi.fn().mockResolvedValue(undefined),
+      database: vi.fn().mockResolvedValue(undefined),
+      filesystem: vi.fn().mockResolvedValue(undefined),
+      sandbox: vi.fn().mockResolvedValue(undefined),
+    };
 
     await acquireTaskWorktree({
       task,

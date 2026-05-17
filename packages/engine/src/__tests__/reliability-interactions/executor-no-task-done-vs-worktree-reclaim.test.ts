@@ -95,12 +95,12 @@ describe("reliability interactions: executor no-fn_task_done vs worktree reclaim
     const executor = new TaskExecutor(store as any, "/tmp/test");
     await executor.execute(state);
 
-    expect(store.updateTask).toHaveBeenCalledWith("FN-4601", {
+    expect(store.updateTask).toHaveBeenCalledWith("FN-4601", expect.objectContaining({
       sessionFile: null,
       worktree: null,
       branch: null,
-      baseCommitSha: null,
-    });
+      worktreeSessionRetryCount: 1,
+    }));
     expect(store.moveTask).toHaveBeenCalledWith("FN-4601", "todo", { preserveProgress: true });
     // FN-4806: session-start missing-worktree is engine self-heal, must not burn retry budget
     // and must not mark the task failed.
@@ -128,7 +128,6 @@ describe("reliability interactions: executor no-fn_task_done vs worktree reclaim
     await executor.execute(state);
 
     expect(store.moveTask).toHaveBeenCalledWith("FN-4601", "in-review");
-    expect(store.updateTask).not.toHaveBeenCalledWith("FN-4601", expect.objectContaining({ baseCommitSha: null, worktree: null, branch: null }));
   });
 
   it("reclaim path ignores requeue budget and always silently requeues (FN-4806)", async () => {

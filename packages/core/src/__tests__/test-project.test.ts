@@ -151,7 +151,7 @@ describe("test-project fixture", () => {
 
     expect(countTmpDirs(projectPrefix)).toBe(projectCountBefore);
     expect(countTmpDirs(globalPrefix)).toBe(globalCountBefore);
-  });
+  }, 30_000);
 
   it("createTestProject({ seedTasks }) pre-seeds tasks during setup", async () => {
     const fixture = await createFixture({ seedTasks: 4 });

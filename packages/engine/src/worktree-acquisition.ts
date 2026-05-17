@@ -47,7 +47,7 @@ export interface AcquireTaskWorktreeOptions {
   settings: Partial<Settings>;
   pool?: WorktreePool;
   logger?: { log: (m: string) => void; warn: (m: string) => void; error?: (m: string) => void };
-  audit?: Pick<RunAuditor, "git">;
+  audit?: RunAuditor;
   runContext?: RunMutationContext;
   runInitCommand?: boolean;
   createWorktree?: (
