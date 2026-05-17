@@ -1,11 +1,9 @@
-import { SecretsStoreError, type SecretScope } from "@fusion/core";
+import { isSecretAccessPolicy, isSecretScope, SecretsStoreError, type SecretScope } from "@fusion/core";
 import { ApiError, badRequest } from "../api-error.js";
 import type { ApiRouteRegistrar } from "./types.js";
 
-const VALID_POLICIES = ["auto", "prompt", "deny"] as const;
-
 function parseScope(scope: unknown): SecretScope {
-  if (scope === "project" || scope === "global") return scope;
+  if (isSecretScope(scope)) return scope;
   throw badRequest("scope must be 'project' or 'global'");
 }
 
@@ -58,20 +56,20 @@ export const registerSecretsRoutes: ApiRouteRegistrar = (ctx) => {
       if (typeof value !== "string") {
         throw badRequest("value must be a string");
       }
-      let parsedAccessPolicy: (typeof VALID_POLICIES)[number] | undefined;
+      let parsedAccessPolicy: "auto" | "prompt" | "deny" | undefined;
       if (accessPolicy !== undefined) {
-        if (!VALID_POLICIES.includes(accessPolicy as (typeof VALID_POLICIES)[number])) {
+        if (!isSecretAccessPolicy(accessPolicy)) {
           throw badRequest("accessPolicy must be one of: auto, prompt, deny");
         }
-        parsedAccessPolicy = accessPolicy as (typeof VALID_POLICIES)[number];
+        parsedAccessPolicy = accessPolicy;
       }
 
       const { store: scopedStore } = await getProjectContext(req);
       const secretsStore = await scopedStore.getSecretsStore();
       const secret = await secretsStore.createSecret({
         scope: parsedScope,
-        key: key as string,
-        plaintextValue: value as string,
+        key,
+        plaintextValue: value,
         description: typeof description === "string" ? description : null,
         accessPolicy: parsedAccessPolicy,
         envExportable: envExportable === undefined ? undefined : Boolean(envExportable),
@@ -106,7 +104,7 @@ export const registerSecretsRoutes: ApiRouteRegistrar = (ctx) => {
         patch.description = req.body.description;
       }
       if (Object.prototype.hasOwnProperty.call(req.body, "accessPolicy")) {
-        if (req.body.accessPolicy !== null && !VALID_POLICIES.includes(req.body.accessPolicy as (typeof VALID_POLICIES)[number])) {
+        if (req.body.accessPolicy !== null && !isSecretAccessPolicy(req.body.accessPolicy)) {
           throw badRequest("accessPolicy must be one of: auto, prompt, deny");
         }
         patch.accessPolicy = req.body.accessPolicy;
