@@ -1074,11 +1074,45 @@ export class Scheduler {
                 const reason = `Owning-node handoff parked dispatch: ${handoffDecision.reason}`;
                 schedulerLog.log(`Task ${task.id} dispatch blocked — ${reason}`);
                 await this.store.logEntry(task.id, reason);
+                await (this.store as any).recordRunAuditEvent?.({
+                  domain: "database",
+                  mutationType: "node:handoff:parked",
+                  target: freshTask.id,
+                  metadata: {
+                    taskId: freshTask.id,
+                    ownerNodeId: freshTask.checkoutNodeId,
+                    ownerNodeHealth:
+                      ownerNodeHealth === "offline" || ownerNodeHealth === "error" || ownerNodeHealth === "online"
+                        ? ownerNodeHealth
+                        : "unknown",
+                    localNodeId,
+                    handoffPolicy: settings.owningNodeHandoffPolicy,
+                    decisionReason: handoffDecision.reason,
+                    source: "scheduler.dispatch",
+                  },
+                });
               }
               continue;
             }
 
             await this.store.logEntry(task.id, `Owning-node handoff applied: ${handoffDecision.reason}`);
+            await (this.store as any).recordRunAuditEvent?.({
+              domain: "database",
+              mutationType: handoffDecision.action === "reassign-local" ? "node:handoff:reassign-local" : "node:handoff:reassign-any",
+              target: freshTask.id,
+              metadata: {
+                taskId: freshTask.id,
+                ownerNodeId: freshTask.checkoutNodeId,
+                ownerNodeHealth:
+                  ownerNodeHealth === "offline" || ownerNodeHealth === "error" || ownerNodeHealth === "online"
+                    ? ownerNodeHealth
+                    : "unknown",
+                localNodeId,
+                handoffPolicy: settings.owningNodeHandoffPolicy,
+                decisionReason: handoffDecision.reason,
+                source: "scheduler.dispatch",
+              },
+            });
             const dispatchNodeBefore = effectiveNode.nodeId;
             if (handoffDecision.action === "reassign-local") {
               effectiveNode = { nodeId: undefined, source: "local" };
