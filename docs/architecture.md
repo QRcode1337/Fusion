@@ -878,6 +878,8 @@ Key server capabilities:
   - `GET/POST/DELETE /api/chat/rooms/:id/members[/:agentId]` → member list/add/remove (`400` for invalid body, `404` for unknown room/member)
   - `GET /api/chat/rooms/:id/messages` + `POST /api/chat/rooms/:id/messages` + `DELETE /api/chat/rooms/:id/messages` + `DELETE /api/chat/rooms/:id/messages/:messageId`
     - Room message POST persists the user room message (`201 { message }`), rejects non-null `senderAgentId` for user submissions, then triggers server-side room responder execution that persists assistant room replies via `chatStore.addRoomMessage(...)`
+  - `POST /api/chat/rooms/:id/attachments` uploads a room-scoped attachment file and returns `{ attachment }` metadata (`400` invalid mime/size, `404` missing room)
+  - `GET /api/chat/rooms/:id/attachments/:filename` streams uploaded room attachments with path-traversal protection
   - `POST /api/chat/rooms/:id/messages/:messageId/attachments` records attachment metadata on an existing room message
   - Error contract follows existing API patterns: `400` validation failures, `404` missing resources, `409` duplicate-slug conflicts, `503` when chat store is unavailable
   - SSE fan-out on `/api/events` now includes: `chat:room:created`, `chat:room:updated`, `chat:room:deleted`, `chat:room:member:added`, `chat:room:member:removed`, `chat:room:message:added`, `chat:room:message:updated`, `chat:room:message:deleted`
