@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import { TaskStore } from "../store.js";
+import { __setTaskActivityLogLimitsForTesting, TaskStore } from "../store.js";
 import { createTaskStoreTestHarness } from "./store-test-helpers.js";
 
 describe("TaskStore RunMutationContext", () => {
@@ -13,6 +13,7 @@ describe("TaskStore RunMutationContext", () => {
   });
 
   afterEach(async () => {
+    __setTaskActivityLogLimitsForTesting(null);
     await harness.afterEach();
   });
 
@@ -43,21 +44,25 @@ describe("TaskStore RunMutationContext", () => {
     });
 
     it("logEntry() bounds retained activity entries and truncates large outcomes", async () => {
-      const task = await store.createTask({ description: "Test task" });
-      const longOutcome = "x".repeat(5_000);
+      const entryLimit = 50;
+      const outcomeLimit = 200;
+      __setTaskActivityLogLimitsForTesting({ entryLimit, outcomeLimit });
 
-      for (let index = 0; index < 1_005; index += 1) {
-        await store.logEntry(task.id, `Action ${index}`, index === 1_004 ? longOutcome : undefined);
+      const task = await store.createTask({ description: "Test task" });
+      const longOutcome = "x".repeat(2_000);
+
+      for (let index = 0; index < entryLimit + 5; index += 1) {
+        await store.logEntry(task.id, `Action ${index}`, index === entryLimit + 4 ? longOutcome : undefined);
       }
 
       const updatedTask = await store.getTask(task.id);
-      expect(updatedTask.log).toHaveLength(1_000);
+      expect(updatedTask.log).toHaveLength(50);
       expect(updatedTask.log[0].action).toBe("Action 5");
       const lastEntry = updatedTask.log[updatedTask.log.length - 1];
-      expect(lastEntry.action).toBe("Action 1004");
+      expect(lastEntry.action).toBe("Action 54");
       expect(lastEntry.outcome?.length).toBeLessThan(longOutcome.length);
       expect(lastEntry.outcome).toContain("outcome truncated");
-    }, 180_000);
+    });
 
     it("addComment() with runContext includes runContext in log entry", async () => {
       const task = await store.createTask({ description: "Test task" });
