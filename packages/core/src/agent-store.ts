@@ -1432,7 +1432,7 @@ export class AgentStore extends EventEmitter {
         const centralResult = await Promise.resolve(this.claimStore.tryClaimTask({
           projectId: this.claimProjectId,
           taskId,
-          nodeId: requestNodeId,
+          nodeId: requestNodeId!,
           agentId,
           runId: leaseContext?.runId ?? task.checkoutRunId ?? null,
           renewedAt: nextRenewedAt,

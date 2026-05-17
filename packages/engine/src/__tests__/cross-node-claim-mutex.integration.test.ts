@@ -55,19 +55,19 @@ describe("cross-node claim mutex integration", () => {
         releaseBarrier = resolve;
       });
 
-      centralDb.tryClaimTask = ((input) => {
+      centralDb.tryClaimTask = (((input: Parameters<CentralDatabase["tryClaimTask"]>[0]) => {
         waiters += 1;
         if (waiters === 2) {
           releaseBarrier?.();
         }
         return barrier.then(() => originalTryClaim(input));
-      }) as CentralDatabase["tryClaimTask"];
+      }) as unknown) as CentralDatabase["tryClaimTask"];
     };
 
     installBarrier();
     const [first, second] = await Promise.allSettled([
-      storeA.checkoutTask(agentA, taskId, { runId: "run-a" }),
-      storeB.checkoutTask(agentB, taskId, { runId: "run-b" }),
+      storeA.checkoutTask(agentA, taskId, { nodeId: "node-a", runId: "run-a" }),
+      storeB.checkoutTask(agentB, taskId, { nodeId: "node-b", runId: "run-b" }),
     ]);
 
     const fulfilled = [first, second].filter((entry): entry is PromiseFulfilledResult<Awaited<ReturnType<AgentStore["checkoutTask"]>>> => entry.status === "fulfilled");
@@ -87,8 +87,8 @@ describe("cross-node claim mutex integration", () => {
 
     installBarrier();
     const [third, fourth] = await Promise.allSettled([
-      storeA.checkoutTask(agentA, taskId, { runId: "run-c" }),
-      storeB.checkoutTask(agentB, taskId, { runId: "run-d" }),
+      storeA.checkoutTask(agentA, taskId, { nodeId: "node-a", runId: "run-c" }),
+      storeB.checkoutTask(agentB, taskId, { nodeId: "node-b", runId: "run-d" }),
     ]);
 
     const fulfilled2 = [third, fourth].filter((entry): entry is PromiseFulfilledResult<Awaited<ReturnType<AgentStore["checkoutTask"]>>> => entry.status === "fulfilled");

@@ -27,9 +27,12 @@ Core tables:
 - `nodes`
 - `peerNodes`
 - `settingsSyncState`
+- `taskClaims` (authoritative cross-node task checkout claims keyed by `(projectId, taskId)`)
 - `__meta`
 
 Per-project task data remains in each repo’s `.fusion/fusion.db`.
+
+`taskClaims` is the central cross-node lease mutex introduced by FN-4819 §2: claim acquisition/renewal/release happen in `~/.fusion/fusion-central.db`, while per-project lease fields mirror the central winner for local scheduler/runtime consumption.
 
 Peer/mesh coordination spans core + engine, with startup ownership in CLI process entrypoints:
 
