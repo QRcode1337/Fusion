@@ -108,8 +108,10 @@ describe("self-healing worktree metadata reconcile", () => {
     git(livePath, "add feature.txt");
     git(livePath, "commit -m 'feature commit'");
 
+    await store.moveTask(task.id, "todo");
+    await store.moveTask(task.id, "in-progress");
+    await store.moveTask(task.id, "in-review");
     await store.updateTask(task.id, {
-      column: "in-review",
       worktree: stalePath,
       branch: null,
     });
@@ -143,9 +145,9 @@ describe("self-healing worktree metadata reconcile", () => {
 describe("reconcileTaskWorktreeMetadata matrix", () => {
   it("skips done/archived and executing tasks", async () => {
     const tasks = [
-      makeSlimTask("FN-100", { column: "done", worktree: "/missing", branch: null }),
-      makeSlimTask("FN-101", { column: "archived", worktree: "/missing", branch: null }),
-      makeSlimTask("FN-102", { column: "todo", worktree: "/missing", branch: null }),
+      makeSlimTask("FN-100", { column: "done", worktree: "/missing", branch: undefined }),
+      makeSlimTask("FN-101", { column: "archived", worktree: "/missing", branch: undefined }),
+      makeSlimTask("FN-102", { column: "todo", worktree: "/missing", branch: undefined }),
     ];
 
     const store = Object.assign(new EventEmitter(), {

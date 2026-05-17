@@ -44,7 +44,7 @@ describe("reliability interactions: worktree metadata reconcile", () => {
   });
 
   it("defers while task is in executingTaskIds (recoverOrphaned/resume interaction)", async () => {
-    const store = makeStore([task("FN-1", { column: "in-review", worktree: "/missing", branch: null })]);
+    const store = makeStore([task("FN-1", { column: "in-review", worktree: "/missing", branch: undefined })]);
     vi.spyOn(worktreePoolModule, "getRegisteredWorktreeBranchMap").mockResolvedValue(new Map([["fusion/fn-1", "/live"]]));
 
     const manager = new SelfHealingManager(store, {
@@ -58,7 +58,7 @@ describe("reliability interactions: worktree metadata reconcile", () => {
   });
 
   it("rebinds exactly once after deferred pass (acquireTaskWorktree interaction)", async () => {
-    const store = makeStore([task("FN-2", { column: "todo", worktree: "/missing", branch: null })]);
+    const store = makeStore([task("FN-2", { column: "todo", worktree: "/missing", branch: undefined })]);
     vi.spyOn(worktreePoolModule, "getRegisteredWorktreeBranchMap").mockResolvedValue(new Map([["fusion/fn-2", "/live"]]));
 
     let executing = true;
@@ -87,7 +87,7 @@ describe("reliability interactions: worktree metadata reconcile", () => {
   });
 
   it("skips done tasks during periodic reconcile (completion fan-out owns done lifecycle)", async () => {
-    const store = makeStore([task("FN-3", { column: "done", worktree: "/missing", branch: null })]);
+    const store = makeStore([task("FN-3", { column: "done", worktree: "/missing", branch: undefined })]);
     vi.spyOn(worktreePoolModule, "getRegisteredWorktreeBranchMap").mockResolvedValue(new Map([["fusion/fn-3", "/live"]]));
 
     const manager = new SelfHealingManager(store, { rootDir: "/repo" });
