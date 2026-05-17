@@ -781,7 +781,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
 
       if (diffBase) {
         try {
-          const committedOutput = (await runGitCommand(["diff", "--name-status", `${diffBase}..HEAD`], cwd, 10000)).trim();
+          const committedOutput = (await runGitCommand(["diff", "--name-status", "-M", `${diffBase}..HEAD`], cwd, 10000)).trim();
           for (const line of committedOutput.split("\n").filter(Boolean)) {
             const parsed = parseNameStatusLine(line);
             if (!parsed) continue;
@@ -793,7 +793,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       try {
-        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status"], cwd, 10000)).trim();
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status", "-M"], cwd, 10000)).trim();
         for (const line of stagedOutput.split("\n").filter(Boolean)) {
           const parsed = parseNameStatusLine(line);
           if (!parsed || fileMap.has(parsed.path)) continue;
@@ -804,7 +804,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       try {
-        const workingTreeOutput = (await runGitCommand(["diff", "--name-status"], cwd, 10000)).trim();
+        const workingTreeOutput = (await runGitCommand(["diff", "--name-status", "-M"], cwd, 10000)).trim();
         for (const line of workingTreeOutput.split("\n").filter(Boolean)) {
           const parsed = parseNameStatusLine(line);
           if (!parsed || fileMap.has(parsed.path)) continue;
@@ -1003,7 +1003,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
 
       if (diffBase) {
         try {
-          const committedOutput = (await runGitCommand(["diff", "--name-status", `${diffBase}..HEAD`], cwd, 5000)).trim();
+          const committedOutput = (await runGitCommand(["diff", "--name-status", "-M", `${diffBase}..HEAD`], cwd, 5000)).trim();
           for (const line of committedOutput.split("\n").filter(Boolean)) {
             const parsed = parseNameStatusLine(line);
             if (!parsed) continue;
@@ -1015,7 +1015,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       try {
-        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status"], cwd, 5000)).trim();
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status", "-M"], cwd, 5000)).trim();
         for (const line of stagedOutput.split("\n").filter(Boolean)) {
           const parsed = parseNameStatusLine(line);
           if (!parsed || fileMap.has(parsed.path)) continue;
@@ -1026,7 +1026,7 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       try {
-        const workingTreeOutput = (await runGitCommand(["diff", "--name-status"], cwd, 5000)).trim();
+        const workingTreeOutput = (await runGitCommand(["diff", "--name-status", "-M"], cwd, 5000)).trim();
         for (const line of workingTreeOutput.split("\n").filter(Boolean)) {
           const parsed = parseNameStatusLine(line);
           if (!parsed || fileMap.has(parsed.path)) continue;
