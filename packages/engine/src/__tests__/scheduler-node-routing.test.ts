@@ -465,3 +465,149 @@ describe("Scheduler node routing", () => {
     expect(store.logEntry).toHaveBeenCalledWith(task.id, "Owning-node handoff applied: owner_offline_any_healthy_eligible");
   });
 });
+
+describe("owning-node lease guard (FN-4832)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFile).mockResolvedValue("# Task\nNode routing");
+  });
+
+  it("parks dispatch when owner is online on a foreign node", async () => {
+    // FN-4832: scheduler must not dispatch task with active lease on online foreign node.
+    const task = createMockTask({ id: "FN-121", nodeId: "node-a", checkoutNodeId: "node-a", checkedOutBy: "exec-a" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1, owningNodeHandoffPolicy: "reassign-to-local" });
+    const scheduler = new Scheduler(store, {
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-a": "online" }),
+    });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.moveTask).not.toHaveBeenCalledWith(task.id, "in-progress", expect.anything());
+    expect(store.moveTask).not.toHaveBeenCalled();
+    expect(store.logEntry).toHaveBeenCalledWith(task.id, "Owning-node handoff parked dispatch: owner_recovered");
+  });
+
+  it("deduplicates owner_recovered park logs across schedule ticks", async () => {
+    // FN-4832: repeated scheduling should not flood parked-owner logs.
+    const task = createMockTask({ id: "FN-122", nodeId: "node-a", checkoutNodeId: "node-a", checkedOutBy: "exec-a" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1, owningNodeHandoffPolicy: "reassign-to-local" });
+    const scheduler = new Scheduler(store, {
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-a": "online" }),
+    });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+    await scheduler.schedule();
+
+    const ownerRecoveredLogs = vi.mocked(store.logEntry).mock.calls.filter(([, message]) =>
+      String(message).includes("owner_recovered"),
+    );
+    expect(ownerRecoveredLogs).toHaveLength(1);
+    expect(store.moveTask).not.toHaveBeenCalledWith(task.id, "in-progress", expect.anything());
+  });
+
+  it("skips guard when local node owns checkout lease", async () => {
+    // FN-4832: self-owned leases should dispatch normally.
+    const task = createMockTask({ id: "FN-123", nodeId: undefined, checkoutNodeId: "local", checkedOutBy: "exec-local" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1 });
+    const scheduler = new Scheduler(store, {
+      localNodeId: "local",
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ local: "online" }),
+    });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.logEntry).not.toHaveBeenCalledWith(task.id, expect.stringContaining("owner_recovered"));
+    expect(store.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      effectiveNodeId: null,
+      effectiveNodeSource: "local",
+    }));
+    expect(store.moveTask).toHaveBeenCalledWith(task.id, "in-progress", expect.anything());
+  });
+
+  it("preserves offline owner reassign-to-local behavior", async () => {
+    // FN-4832: offline owner still reassigns to local when policy requires.
+    const task = createMockTask({ id: "FN-124", nodeId: "node-a", checkoutNodeId: "node-a", checkedOutBy: "exec-a" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1, owningNodeHandoffPolicy: "reassign-to-local" });
+    const scheduler = new Scheduler(store, {
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-a": "offline" }),
+    });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.logEntry).toHaveBeenCalledWith(task.id, "Owning-node handoff applied: owner_offline_local_takes_over");
+    expect(store.updateTask).toHaveBeenCalledWith(task.id, expect.objectContaining({
+      effectiveNodeId: null,
+      effectiveNodeSource: "local",
+    }));
+    expect(store.moveTask).toHaveBeenCalledWith(task.id, "in-progress", expect.anything());
+  });
+
+  it("parks when owner is offline and policy blocks handoff", async () => {
+    // FN-4832: block policy must continue to park foreign leases.
+    const task = createMockTask({ id: "FN-125", nodeId: "node-a", checkoutNodeId: "node-a", checkedOutBy: "exec-a" });
+    const store = createMockStore(task, { maxConcurrent: 1, maxWorktrees: 1, owningNodeHandoffPolicy: "block" });
+    const scheduler = new Scheduler(store, {
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-a": "offline" }),
+    });
+    (scheduler as unknown as { running: boolean }).running = true;
+
+    await scheduler.schedule();
+
+    expect(store.logEntry).toHaveBeenCalledWith(task.id, "Owning-node handoff parked dispatch: handoff_blocked_by_policy");
+    expect(store.moveTask).not.toHaveBeenCalledWith(task.id, "in-progress", expect.anything());
+  });
+
+  it("respects custom localNodeId for self-vs-foreign ownership", async () => {
+    // FN-4832: custom localNodeId must replace hardcoded "local" ownership checks.
+    const ownedTask = createMockTask({
+      id: "FN-126",
+      nodeId: "node-prod-1",
+      checkoutNodeId: "node-prod-1",
+      checkedOutBy: "exec-prod",
+    });
+    const ownedStore = createMockStore(ownedTask, { maxConcurrent: 1, maxWorktrees: 1 });
+    const ownedScheduler = new Scheduler(ownedStore, {
+      localNodeId: "node-prod-1",
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-prod-1": "online" }),
+    });
+    (ownedScheduler as unknown as { running: boolean }).running = true;
+
+    await ownedScheduler.schedule();
+
+    expect(ownedStore.logEntry).not.toHaveBeenCalledWith(ownedTask.id, expect.stringContaining("owner_recovered"));
+    expect(ownedStore.moveTask).toHaveBeenCalledWith(ownedTask.id, "in-progress", expect.anything());
+
+    const foreignTask = createMockTask({
+      id: "FN-127",
+      nodeId: "node-prod-1",
+      checkoutNodeId: "node-prod-1",
+      checkedOutBy: "exec-prod",
+    });
+    const foreignStore = createMockStore(foreignTask, { maxConcurrent: 1, maxWorktrees: 1 });
+    const foreignScheduler = new Scheduler(foreignStore, {
+      localNodeId: "node-prod-2",
+      validateNodeDispatch: allowDispatchValidator(),
+      nodeHealthMonitor: createMockHealthMonitor({ "node-prod-1": "online" }),
+    });
+    (foreignScheduler as unknown as { running: boolean }).running = true;
+
+    await foreignScheduler.schedule();
+
+    expect(foreignStore.logEntry).toHaveBeenCalledWith(
+      foreignTask.id,
+      "Owning-node handoff parked dispatch: owner_recovered",
+    );
+    expect(foreignStore.moveTask).not.toHaveBeenCalledWith(foreignTask.id, "in-progress", expect.anything());
+  });
+});

@@ -109,7 +109,7 @@ describe("Scheduler node-unreachable audit", () => {
     });
   });
 
-  it("does not emit node-unreachable audit on healthy owner dispatch", async () => {
+  it("emits park-action audit on online foreign owner (FN-4832)", async () => {
     const { store, recordRunAuditEvent } = createStore(createTask({ id: "FN-3" }));
     const scheduler = new Scheduler(store, {
       nodeHealthMonitor: { getNodeHealth: vi.fn(() => "online") } as any,
@@ -118,6 +118,14 @@ describe("Scheduler node-unreachable audit", () => {
 
     await scheduler.schedule();
 
-    expect(recordRunAuditEvent).not.toHaveBeenCalled();
+    expect(recordRunAuditEvent).toHaveBeenCalledTimes(1);
+    const event = recordRunAuditEvent.mock.calls[0][0] as RunAuditEventInput;
+    expect(event.metadata).toMatchObject({
+      handoffAction: "park",
+      decisionPath: "scheduler-handoff-park",
+      ownerNodeId: "node-owner",
+      ownerNodeHealth: "online",
+      handoffReason: "owner_recovered",
+    });
   });
 });

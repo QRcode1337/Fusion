@@ -151,6 +151,8 @@ export interface SchedulerOptions {
   nodeHealthMonitor?: import("./node-health-monitor.js").NodeHealthMonitor;
   /** Optional dispatch validator used to block dispatch on configuration issues before health policy checks. */
   validateNodeDispatch?: (nodeId: string) => Promise<NodeDispatchValidationResult>;
+  /** Local node identifier used to distinguish self-owned leases from foreign-owned leases. Default: "local". */
+  localNodeId?: string;
   /** Optional shared auto-claim snapshot manager for invalidation on task mutations. */
   snapshotManager?: AutoClaimSnapshotManager;
 }
@@ -513,7 +515,8 @@ export class Scheduler {
     task: Task,
     metadata: {
       ownerNodeId: string;
-      ownerNodeHealth: "offline" | "error";
+      // Includes FN-4832 online-owner parking (`owner_recovered`) in dispatch handoff audits.
+      ownerNodeHealth: "offline" | "error" | "online";
       handoffAction: "park" | "reassign-local" | "reassign-any";
       handoffReason: string;
       decisionPath: "scheduler-handoff-park" | "scheduler-handoff-reassign-local" | "scheduler-handoff-reassign-any";
@@ -1039,21 +1042,24 @@ export class Scheduler {
         }
 
         // Enforce unavailable-node policy + owning-node handoff policy
+        // FN-4832: this guard currently applies only when node routing is explicit; local routing still relies on checkout 409 claim backstops.
         if (effectiveNode.nodeId !== undefined && this.options.nodeHealthMonitor) {
-          if (freshTask.checkoutNodeId && freshTask.checkedOutBy) {
+          const localNodeId = this.options.localNodeId ?? "local";
+          if (freshTask.checkoutNodeId && freshTask.checkedOutBy && freshTask.checkoutNodeId !== localNodeId) {
             const ownerNodeHealth = this.options.nodeHealthMonitor.getNodeHealth(freshTask.checkoutNodeId);
-            if (ownerNodeHealth === "offline" || ownerNodeHealth === "error") {
-              const handoffDecision = decideOwningNodeHandoff({
-                task: freshTask,
-                ownerNodeId: freshTask.checkoutNodeId,
-                ownerNodeHealth,
-                localNodeId: "local",
-                handoffPolicy: settings.owningNodeHandoffPolicy,
-              });
+            // FN-4832 + AGENTS.md Checkout Leasing: never dispatch tasks with active foreign ownership; policy decides park/reassign.
+            const handoffDecision = decideOwningNodeHandoff({
+              task: freshTask,
+              ownerNodeId: freshTask.checkoutNodeId,
+              ownerNodeHealth,
+              localNodeId,
+              handoffPolicy: settings.owningNodeHandoffPolicy,
+            });
 
-              if (handoffDecision.action === "park") {
-                if (!this.wasNodeBlocked.has(task.id)) {
-                  this.wasNodeBlocked.add(task.id);
+            if (handoffDecision.action === "park") {
+              if (!this.wasNodeBlocked.has(task.id)) {
+                this.wasNodeBlocked.add(task.id);
+                if (ownerNodeHealth === "offline" || ownerNodeHealth === "error" || ownerNodeHealth === "online") {
                   await this.emitNodeUnreachableRecoveryAudit(freshTask, {
                     ownerNodeId: freshTask.checkoutNodeId,
                     ownerNodeHealth,
@@ -1064,18 +1070,20 @@ export class Scheduler {
                     dispatchNodeBefore: effectiveNode.nodeId,
                     dispatchNodeAfter: effectiveNode.nodeId,
                   });
-                  const reason = `Owning-node handoff parked dispatch: ${handoffDecision.reason}`;
-                  schedulerLog.log(`Task ${task.id} dispatch blocked — ${reason}`);
-                  await this.store.logEntry(task.id, reason);
                 }
-                continue;
+                const reason = `Owning-node handoff parked dispatch: ${handoffDecision.reason}`;
+                schedulerLog.log(`Task ${task.id} dispatch blocked — ${reason}`);
+                await this.store.logEntry(task.id, reason);
               }
+              continue;
+            }
 
-              await this.store.logEntry(task.id, `Owning-node handoff applied: ${handoffDecision.reason}`);
-              const dispatchNodeBefore = effectiveNode.nodeId;
-              if (handoffDecision.action === "reassign-local") {
-                effectiveNode = { nodeId: undefined, source: "local" };
-              }
+            await this.store.logEntry(task.id, `Owning-node handoff applied: ${handoffDecision.reason}`);
+            const dispatchNodeBefore = effectiveNode.nodeId;
+            if (handoffDecision.action === "reassign-local") {
+              effectiveNode = { nodeId: undefined, source: "local" };
+            }
+            if (ownerNodeHealth === "offline" || ownerNodeHealth === "error" || ownerNodeHealth === "online") {
               await this.emitNodeUnreachableRecoveryAudit(freshTask, {
                 ownerNodeId: freshTask.checkoutNodeId,
                 ownerNodeHealth,
