@@ -1143,6 +1143,7 @@ export type {
   EncryptedSecret,
 } from "./secrets-crypto.js";
 export {
+  isSecretScope,
   SecretsStore,
   SecretsStoreError,
 } from "./secrets-store.js";

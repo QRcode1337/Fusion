@@ -4,6 +4,10 @@ import type { CentralDatabase } from "./central-db.js";
 import { createSecretCipher, SecretCryptoError, type MasterKeyProvider } from "./secrets-crypto.js";
 
 export type SecretScope = "project" | "global";
+export function isSecretScope(value: unknown): value is SecretScope {
+  return value === "project" || value === "global";
+}
+
 export type SecretAccessPolicy = "auto" | "prompt" | "deny";
 
 export interface SecretRecord {
