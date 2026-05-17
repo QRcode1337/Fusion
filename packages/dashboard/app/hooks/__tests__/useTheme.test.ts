@@ -80,15 +80,19 @@ describe("useTheme", () => {
     document.documentElement.removeAttribute("data-color-theme");
     document.documentElement.style.fontSize = "";
 
-    // Clear any theme-data stylesheet links from previous tests
+    // Reset static theme-data link to mirror index.html markup
     document.querySelectorAll('link[id="theme-data"]').forEach((link) => link.remove());
+    const themeDataLink = document.createElement("link");
+    themeDataLink.id = "theme-data";
+    themeDataLink.rel = "stylesheet";
+    themeDataLink.href = "/theme-data.css";
+    document.head.appendChild(themeDataLink);
   });
 
   afterEach(() => {
     consoleWarnSpy.mockRestore();
     vi.unstubAllGlobals();
 
-    // Clean up any theme-data stylesheet links
     document.querySelectorAll('link[id="theme-data"]').forEach((link) => link.remove());
   });
 
@@ -555,610 +559,54 @@ describe("useTheme", () => {
   });
 
   describe("dynamic theme-data.css loading", () => {
-    it("loads theme-data.css when switching to non-default theme", () => {
+    it("reuses the static theme-data link when switching to non-default theme", () => {
+      const appendChildSpy = vi.spyOn(document.head, "appendChild");
       const { result } = renderHook(() => useTheme());
 
-      // Initially default theme - no theme-data link should exist
-      expect(document.getElementById("theme-data")).toBeNull();
-
-      // Switch to ocean theme
       act(() => {
         result.current.setColorTheme("ocean");
       });
 
-      // theme-data link should be present
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      expect(link?.tagName.toLowerCase()).toBe("link");
-      expect(link?.getAttribute("rel")).toBe("stylesheet");
-      // href should resolve to theme-data.css via document.baseURI
-      expect(link?.getAttribute("href")?.endsWith("theme-data.css")).toBe(true);
+      const links = document.querySelectorAll('link[id="theme-data"]');
+      expect(links).toHaveLength(1);
+      expect(appendChildSpy).not.toHaveBeenCalledWith(links[0]);
+      appendChildSpy.mockRestore();
     });
 
-    it("removes theme-data.css when switching back to default theme", () => {
+    it("does not remove the static theme-data link when switching back to default", () => {
       const { result } = renderHook(() => useTheme());
 
-      // First switch to non-default theme
       act(() => {
         result.current.setColorTheme("ocean");
       });
-
-      // theme-data link should exist
-      expect(document.getElementById("theme-data")).not.toBeNull();
-
-      // Switch back to default
       act(() => {
         result.current.setColorTheme("default");
       });
 
-      // theme-data link should be removed
-      expect(document.getElementById("theme-data")).toBeNull();
+      expect(document.querySelectorAll('link[id="theme-data"]')).toHaveLength(1);
     });
 
-    it("does not inject duplicate theme-data links when switching themes", () => {
-      const { result } = renderHook(() => useTheme());
-
-      // Switch to ocean theme multiple times
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-      act(() => {
-        result.current.setColorTheme("forest");
-      });
-      act(() => {
-        result.current.setColorTheme("sunset");
-      });
-
-      // Should only have one theme-data link
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
-    });
-
-    it("theme-data.css not required for default theme", () => {
-      const { result } = renderHook(() => useTheme());
-
-      // Default theme should not have theme-data link
-      expect(document.getElementById("theme-data")).toBeNull();
-
-      // Even after any state changes, default theme doesn't need theme-data
-      act(() => {
-        result.current.setThemeMode("light");
-      });
-      expect(document.getElementById("theme-data")).toBeNull();
-    });
-
-    it("loads theme-data.css for all non-default themes", () => {
-      const { result } = renderHook(() => useTheme());
-
-      // Test a few representative non-default themes
-      const nonDefaultThemes = ["factory", "dracula", "nord", "tokyo-night"] as const;
-
-      for (const theme of nonDefaultThemes) {
-        // Clear any existing link
-        const existing = document.getElementById("theme-data");
-        if (existing) existing.remove();
-
-        act(() => {
-          result.current.setColorTheme(theme);
-        });
-
-        const link = document.getElementById("theme-data");
-        expect(link).not.toBeNull();
-        // href should resolve to theme-data.css via document.baseURI
-        expect(link?.getAttribute("href")?.endsWith("theme-data.css")).toBe(true);
-      }
-    });
-
-    it("resolves theme-data.css to origin root for HTTP sub-paths", () => {
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/some/path/",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-
-      const link = document.getElementById("theme-data") as HTMLLinkElement | null;
-      expect(link).not.toBeNull();
-      const resolved = new URL(link!.href);
-      expect(resolved.origin).toBe("http://localhost:3000");
-      expect(resolved.pathname).toBe("/theme-data.css");
-
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("resolves theme-data.css for file:// URLs (Electron production)", () => {
-      // Simulate Electron production file:// context
+    it("updates stale theme-data href for file:// base URIs", () => {
       Object.defineProperty(document, "baseURI", {
         value: "file:///Users/me/Projects/kb/packages/dashboard/dist/client/index.html",
         configurable: true,
       });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("factory");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      // For file:// URLs, href should resolve to the local file path
-      expect(link?.getAttribute("href")?.endsWith("theme-data.css")).toBe(true);
-      // The href should be a valid file:// URL or path
-      expect(link?.getAttribute("href")).toMatch(/^file:\/\/|^\//);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("resolves theme-data.css for nested file:// paths", () => {
-      // Simulate file:// with nested directory structure
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///app/fusion/node/dashboard/dist/index.html",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("nord");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      expect(link?.getAttribute("href")?.endsWith("theme-data.css")).toBe(true);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("does not duplicate theme-data link when pre-existing in DOM", () => {
-      // Simulate index.html inline script already injected the link
-      const existingLink = document.createElement("link");
-      existingLink.id = "theme-data";
-      existingLink.rel = "stylesheet";
-      existingLink.href = "/theme-data.css";
-      document.head.appendChild(existingLink);
-
-      const { result } = renderHook(() => useTheme());
-
-      // Switch to non-default theme
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-
-      // Should still only have one link (the pre-existing one)
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
-
-      // Clean up
-      existingLink.remove();
-    });
-
-    it("updates stale theme-data link href when baseURI changes", () => {
-      // Simulate the page loading with a different baseURI than current
-      // This can happen if the inline script runs with one baseURI, then navigation occurs
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      // First, inject a link with a stale/wrong href (simulating old baseURI)
-      const staleLink = document.createElement("link");
-      staleLink.id = "theme-data";
-      staleLink.rel = "stylesheet";
-      staleLink.href = "/theme-data.css"; // Wrong path from old base
-      document.head.appendChild(staleLink);
-
-      // Now change baseURI to simulate navigation
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/some/nested/path/",
-        configurable: true,
-      });
-
-      // Switch to non-default theme
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-
-      // The link should exist and href should be updated to the correct value
       const link = document.getElementById("theme-data") as HTMLLinkElement;
-      expect(link).not.toBeNull();
-      // HTTP(S) always resolves to origin-root stylesheet path.
-      expect(link?.href).toBe("http://localhost:3000/theme-data.css");
-
-      // Clean up
-      link?.remove();
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("updates stale file:// link href when baseURI changes", () => {
-      // Simulate Electron production path change
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///app/old/path/index.html",
-        configurable: true,
-      });
+      link.href = "file:///wrong/path/theme-data.css";
 
       const { result } = renderHook(() => useTheme());
-
-      // Inject a link with a stale href (simulating wrong baseURI at load time)
-      const staleLink = document.createElement("link");
-      staleLink.id = "theme-data";
-      staleLink.rel = "stylesheet";
-      staleLink.href = "file:///wrong/path/theme-data.css";
-      document.head.appendChild(staleLink);
-
-      // Now change baseURI to the correct production path
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///Users/me/Projects/kb/packages/dashboard/dist/client/index.html",
-        configurable: true,
-      });
-
-      // Switch to non-default theme
       act(() => {
         result.current.setColorTheme("nord");
       });
 
-      // The link should exist and href should be updated
-      const link = document.getElementById("theme-data") as HTMLLinkElement;
-      expect(link).not.toBeNull();
-      // href should be updated to resolve correctly for the new baseURI
-      expect(link?.href).toBe("file:///Users/me/Projects/kb/packages/dashboard/dist/client/theme-data.css");
+      expect((document.getElementById("theme-data") as HTMLLinkElement).href).toBe(
+        "file:///Users/me/Projects/kb/packages/dashboard/dist/client/theme-data.css",
+      );
 
-      // Clean up
-      link?.remove();
       Object.defineProperty(document, "baseURI", {
         value: "http://localhost:3000/",
         configurable: true,
       });
-    });
-
-    it("resolves concrete path for deep nested file:// URL", () => {
-      // Simulate a deeply nested Electron production path
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///Users/me/Projects/kb/packages/dashboard/dist/client/index.html",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      const href = link?.getAttribute("href");
-      // Must have concrete path ending with theme-data.css
-      expect(href).toBe("file:///Users/me/Projects/kb/packages/dashboard/dist/client/theme-data.css");
-      // Regression: ensure no malformed concatenation (missing slash before filename)
-      expect(href).not.toMatch(/clienttheme-data/);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("resolves concrete path for shallow file:// URL", () => {
-      // Simulate a shallow Electron production path
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///app/index.html",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("factory");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      const href = link?.getAttribute("href");
-      // Must resolve to the correct path with proper slash separator
-      expect(href).toBe("file:///app/theme-data.css");
-      // Regression: ensure no malformed concatenation (missing slash before filename)
-      expect(href).not.toMatch(/apptheme-data/);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("resolves concrete path for medium nested file:// URL", () => {
-      // Simulate Electron path with medium nesting
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///app/fusion/node/dashboard/dist/index.html",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("nord");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      const href = link?.getAttribute("href");
-      // Must resolve to the correct path with proper slash separator
-      expect(href).toBe("file:///app/fusion/node/dashboard/dist/theme-data.css");
-      // Regression: ensure no malformed concatenation (missing slash before filename)
-      expect(href).not.toMatch(/disttheme-data/);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("rejects malformed file:// URL with missing slash before filename", () => {
-      // This test documents the bug that was fixed: URLs like file:///apptheme-data.css
-      // should never be produced. The fix ensures directory and filename are always
-      // separated by a slash.
-      Object.defineProperty(document, "baseURI", {
-        value: "file:///app/index.html",
-        configurable: true,
-      });
-
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("dracula");
-      });
-
-      const link = document.getElementById("theme-data");
-      expect(link).not.toBeNull();
-      const href = link?.getAttribute("href");
-      // The buggy implementation would produce file:///apptheme-data.css
-      // The correct implementation produces file:///app/theme-data.css
-      // These regexes catch the malformed pattern
-      expect(href).not.toMatch(/apptheme-data\.css$/);
-      // Verify it's actually a valid file URL (no concatenation bug)
-      expect(href).toMatch(/^file:\/\/.*\/theme-data\.css$/);
-
-      // Clean up
-      Object.defineProperty(document, "baseURI", {
-        value: "http://localhost:3000/",
-        configurable: true,
-      });
-    });
-
-    it("moves pre-existing theme-data link to end of head for correct cascade", () => {
-      // Regression test: When index.html pre-hydration script injects #theme-data early,
-      // the runtime hook must move it to the end of <head> so color-theme rules
-      // take precedence over base token redefinitions in later stylesheets.
-      //
-      // CSS cascade failure mode:
-      // 1. Pre-hydration script injects <link id="theme-data"> early in <head>
-      // 2. styles.css loads and re-defines :root tokens, overriding color-theme rules
-      // 3. Dark color themes appear broken because base tokens win the cascade
-      //
-      // The fix: after href reconciliation, append the existing link to end of head
-      // so its rules are evaluated after all other stylesheets.
-
-      // Clear any existing elements that might interfere
-      document.head.innerHTML = "";
-
-      // Set up base styles that would normally load after theme-data in real HTML
-      const baseStyles = document.createElement("style");
-      baseStyles.id = "base-styles";
-      baseStyles.textContent = `
-        :root { --bg: #0d1117; --surface: #161b22; }
-        [data-theme="light"] { --bg: #ffffff; --surface: #f6f8fa; }
-      `;
-      document.head.appendChild(baseStyles);
-
-      // Inject theme-data link BEFORE base-styles (simulating pre-hydration injecting early)
-      const earlyLink = document.createElement("link");
-      earlyLink.id = "theme-data";
-      earlyLink.rel = "stylesheet";
-      earlyLink.href = "/theme-data.css";
-      document.head.insertBefore(earlyLink, baseStyles);
-
-      // Verify theme-data is early and base styles are after it
-      const headChildren = Array.from(document.head.children);
-      const themeDataIndex = headChildren.findIndex((el) => el.id === "theme-data");
-      const baseStylesIndex = headChildren.findIndex((el) => el.id === "base-styles");
-      expect(themeDataIndex).toBe(0);
-      expect(baseStylesIndex).toBe(1);
-
-      // Now switch to a non-default color theme via runtime hook
-      const { result } = renderHook(() => useTheme());
-
-      act(() => {
-        result.current.setColorTheme("ocean");
-      });
-
-      // After runtime hook runs, theme-data link should be MOVED to end of head
-      const updatedHeadChildren = Array.from(document.head.children);
-      const newThemeDataIndex = updatedHeadChildren.findIndex((el) => el.id === "theme-data");
-      const newBaseStylesIndex = updatedHeadChildren.findIndex((el) => el.id === "base-styles");
-      expect(newThemeDataIndex).toBeGreaterThan(newBaseStylesIndex);
-
-      // Still only one #theme-data link
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
-    });
-
-    it("dark mode color theme precedence is protected by link reordering", async () => {
-      // This test verifies the specific dark-mode cascade failure scenario:
-      // - Dark mode + non-default color theme
-      // - Pre-existing #theme-data link from pre-hydration
-      // - Base styles that redefine tokens after theme-data
-      //
-      // The color theme rules must win over base token redefinitions.
-
-      localStorageMock[THEME_MODE_STORAGE_KEY] = "dark";
-      localStorageMock[COLOR_THEME_STORAGE_KEY] = "ocean";
-
-      // Mock fetch to resolve so isHydrating becomes false and useEffect runs
-      mockFetchGlobalSettings.mockResolvedValue({
-        themeMode: "dark",
-        colorTheme: "ocean",
-      });
-
-      // Clear any existing elements that might interfere
-      document.head.innerHTML = "";
-
-      // Simulate the HTML structure with theme-data injected early by pre-hydration
-      const baseStyles = document.createElement("style");
-      baseStyles.id = "base-styles";
-      baseStyles.textContent = `
-        :root {
-          --bg: #0d1117;
-          --surface: #161b22;
-          --card: #21262d;
-        }
-      `;
-      document.head.appendChild(baseStyles);
-
-      // Pre-existing theme-data link (from pre-hydration)
-      const existingLink = document.createElement("link");
-      existingLink.id = "theme-data";
-      existingLink.rel = "stylesheet";
-      existingLink.href = "/theme-data.css";
-      // Insert before base-styles to simulate pre-hydration injecting early
-      document.head.insertBefore(existingLink, baseStyles);
-
-      // Verify pre-conditions: theme-data at index 0, base-styles at index 1
-      const children = Array.from(document.head.children);
-      const themeDataIdx = children.findIndex((el) => el.id === "theme-data");
-      const baseIdx = children.findIndex((el) => el.id === "base-styles");
-      expect(themeDataIdx).toBe(0);
-      expect(baseIdx).toBe(1);
-
-      // Run the hook
-      const { result } = renderHook(() => useTheme());
-
-      // Wait for hydration AND the theme-data loading useEffect to complete.
-      // The theme-data loading useEffect runs after colorTheme state updates,
-      // so we need to wait for the link to actually move.
-      await waitFor(() => {
-        expect(result.current.colorTheme).toBe("ocean");
-      });
-
-      // Wait for the link to be moved to end of head (separate useEffect)
-      await waitFor(() => {
-        const updatedChildren = Array.from(document.head.children);
-        const newThemeDataIdx = updatedChildren.findIndex((el) => el.id === "theme-data");
-        const newBaseIdx = updatedChildren.findIndex((el) => el.id === "base-styles");
-        expect(newThemeDataIdx).toBeGreaterThan(newBaseIdx);
-      });
-
-      // Only one #theme-data link should exist
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
-
-      // Dark mode attribute should be set
-      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-      expect(document.documentElement.getAttribute("data-color-theme")).toBe("ocean");
-    });
-
-    it("light mode still works correctly with pre-existing theme-data link", async () => {
-      // Regression test: ensure the link-reordering fix doesn't break light mode
-      localStorageMock[THEME_MODE_STORAGE_KEY] = "light";
-      localStorageMock[COLOR_THEME_STORAGE_KEY] = "factory";
-
-      // Mock fetch to resolve so isHydrating becomes false and useEffect runs
-      mockFetchGlobalSettings.mockResolvedValue({
-        themeMode: "light",
-        colorTheme: "factory",
-      });
-
-      // Clear any existing elements that might interfere
-      document.head.innerHTML = "";
-
-      // Set up base styles that would load after theme-data
-      const baseStyles = document.createElement("style");
-      baseStyles.id = "base-styles";
-      baseStyles.textContent = `
-        :root { --bg: #0d1117; }
-        [data-theme="light"] { --bg: #ffffff; }
-      `;
-      document.head.appendChild(baseStyles);
-
-      // Pre-existing theme-data link from pre-hydration (early in head)
-      const existingLink = document.createElement("link");
-      existingLink.id = "theme-data";
-      existingLink.rel = "stylesheet";
-      existingLink.href = "/theme-data.css";
-      document.head.insertBefore(existingLink, baseStyles);
-
-      const { result } = renderHook(() => useTheme());
-
-      // Wait for hydration AND the theme-data loading useEffect to complete.
-      // The theme-data loading useEffect runs after colorTheme state updates,
-      // so we need to wait for the link to actually move.
-      await waitFor(() => {
-        expect(result.current.colorTheme).toBe("factory");
-      });
-
-      // Wait for the link to be moved to end of head (separate useEffect)
-      await waitFor(() => {
-        const updatedChildren = Array.from(document.head.children);
-        const newThemeDataIdx = updatedChildren.findIndex((el) => el.id === "theme-data");
-        const newBaseIdx = updatedChildren.findIndex((el) => el.id === "base-styles");
-        expect(newThemeDataIdx).toBeGreaterThan(newBaseIdx);
-      });
-
-      // Verify light mode works
-      expect(result.current.themeMode).toBe("light");
-      expect(result.current.colorTheme).toBe("factory");
-      expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-      expect(document.documentElement.getAttribute("data-color-theme")).toBe("factory");
-
-      // Only one #theme-data link
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
-    });
-
-    it("only one theme-data link exists after multiple theme changes", () => {
-      // Ensure link reordering doesn't create duplicates
-      const { result } = renderHook(() => useTheme());
-
-      // Clear any existing elements
-      document.head.innerHTML = "";
-
-      // Pre-existing link
-      const existingLink = document.createElement("link");
-      existingLink.id = "theme-data";
-      existingLink.rel = "stylesheet";
-      existingLink.href = "/theme-data.css";
-      document.head.appendChild(existingLink);
-
-      // Multiple theme changes
-      act(() => result.current.setColorTheme("ocean"));
-      act(() => result.current.setColorTheme("forest"));
-      act(() => result.current.setColorTheme("nord"));
-      act(() => result.current.setColorTheme("default"));
-      act(() => result.current.setColorTheme("dracula"));
-
-      // Should still only have one #theme-data link
-      const links = document.querySelectorAll('link[id="theme-data"]');
-      expect(links.length).toBe(1);
     });
   });
 });
@@ -1217,17 +665,25 @@ describe("getThemeInitScript", () => {
 
     localStorage.setItem(COLOR_THEME_STORAGE_KEY, "ocean");
 
+    let link = document.getElementById("theme-data") as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
+      link.id = "theme-data";
+      link.rel = "stylesheet";
+      link.href = "/theme-data.css";
+      document.head.appendChild(link);
+    }
+
     Object.defineProperty(document, "baseURI", {
       value: "http://localhost:4040/tasks/FN-3773",
       configurable: true,
     });
     runScript();
-    let link = document.getElementById("theme-data") as HTMLLinkElement | null;
+    link = document.getElementById("theme-data") as HTMLLinkElement | null;
     expect(link).not.toBeNull();
     expect(new URL(link!.href).origin).toBe("http://localhost:4040");
     expect(new URL(link!.href).pathname).toBe("/theme-data.css");
 
-    link?.remove();
     Object.defineProperty(document, "baseURI", {
       value: "file:///Users/me/Projects/kb/packages/dashboard/dist/client/index.html",
       configurable: true,

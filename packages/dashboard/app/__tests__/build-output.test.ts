@@ -44,4 +44,27 @@ describe("mobile build output chunking", () => {
     expect(indexHtml).toContain('/fonts/SymbolsNerdFontMono-Regular.ttf');
     expect(indexHtml).toContain('rel="preload"');
   });
+
+  test("keeps theme-data stylesheet link after all other stylesheet links in head", () => {
+    const indexHtml = readFileSync(resolve(dashboardClientDistDir, "index.html"), "utf8");
+    const head = indexHtml.match(/<head>[\s\S]*?<\/head>/i)?.[0] ?? "";
+    const themeLinkMatch = head.match(/<link[^>]*id=["']theme-data["'][^>]*rel=["']stylesheet["'][^>]*>/i)
+      ?? head.match(/<link[^>]*rel=["']stylesheet["'][^>]*id=["']theme-data["'][^>]*>/i);
+
+    expect(themeLinkMatch).toBeTruthy();
+    const themeLink = themeLinkMatch![0];
+    const themeIndex = head.indexOf(themeLink);
+
+    const stylesheetRegex = /<link[^>]*rel=["']stylesheet["'][^>]*>/gi;
+    const otherStylesheetIndexes: number[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = stylesheetRegex.exec(head)) !== null) {
+      if (!m[0].includes('id="theme-data"') && !m[0].includes("id='theme-data'")) {
+        otherStylesheetIndexes.push(m.index);
+      }
+    }
+
+    const lastOtherStylesheetIndex = otherStylesheetIndexes.length === 0 ? -1 : Math.max(...otherStylesheetIndexes);
+    expect(themeIndex).toBeGreaterThan(lastOtherStylesheetIndex);
+  });
 });
