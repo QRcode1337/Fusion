@@ -11,14 +11,15 @@ import { fetchFromRemoteNode, MISSING_REMOTE_NODE_API_KEY_MESSAGE } from "./regi
 import type { ApiRouteRegistrar } from "./types.js";
 
 function emitSecretsAudit(
-  req: any,
+  req: unknown,
   ctx: Parameters<ApiRouteRegistrar>[0],
   type: "secret:sync-push" | "secret:sync-pull",
   target: string,
   metadata: Record<string, unknown>,
 ): void {
-  if (req.runAuditor?.filesystem) {
-    req.runAuditor.filesystem({ type, target, metadata });
+  const requestWithAuditor = req as { runAuditor?: { filesystem?: (input: { type: string; target: string; metadata?: Record<string, unknown> }) => void } };
+  if (requestWithAuditor.runAuditor?.filesystem) {
+    requestWithAuditor.runAuditor.filesystem({ type, target, metadata });
     return;
   }
   ctx.runtimeLogger.child("secrets-sync").info("Secrets sync audit event", { type, target, ...metadata });
