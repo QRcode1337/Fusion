@@ -62,8 +62,40 @@ describe("MailboxModal cache hydration", () => {
     render(<MailboxModal isOpen onClose={() => {}} projectId="p1" agents={[]} />);
 
     await waitFor(() => {
-      const cached = localStorage.getItem(`${SWR_CACHE_KEYS.MAILBOX_INBOX_PREFIX}p1`);
-      expect(cached).not.toBeNull();
+      const cachedRaw = localStorage.getItem(`${SWR_CACHE_KEYS.MAILBOX_INBOX_PREFIX}p1`);
+      expect(cachedRaw).not.toBeNull();
+      const cached = JSON.parse(cachedRaw ?? "{}");
+      expect(cached.messages[0].id).toBe("msg-1");
+      expect(cached).not.toHaveProperty("conversationMessages");
     });
+  });
+
+  it("caps inbox cache at 100 and isolates by project", async () => {
+    const oversized = Array.from({ length: 140 }, (_, index) => ({
+      id: `msg-${index}`,
+      fromId: "agent-1",
+      fromType: "agent" as const,
+      toId: "dashboard",
+      toType: "user" as const,
+      content: `message ${index}`,
+      type: "agent-to-user" as const,
+      read: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+    mockFetchInbox.mockResolvedValueOnce({ messages: oversized, total: oversized.length, unreadCount: oversized.length });
+
+    const { rerender } = render(<MailboxModal isOpen onClose={() => {}} projectId="p1" agents={[]} />);
+
+    await waitFor(() => {
+      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.MAILBOX_INBOX_PREFIX}p1`) ?? "{}");
+      expect(cached.messages).toHaveLength(100);
+    });
+
+    localStorage.setItem(`${SWR_CACHE_KEYS.MAILBOX_INBOX_PREFIX}p2`, JSON.stringify({ messages: [{ id: "msg-p2", fromId: "agent-2", fromType: "agent", toId: "dashboard", toType: "user", content: "p2", type: "agent-to-user", read: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }], total: 1, unreadCount: 1 }));
+    mockFetchInbox.mockImplementation(() => new Promise(() => {}));
+    rerender(<MailboxModal isOpen onClose={() => {}} projectId="p2" agents={[]} />);
+
+    expect(screen.getByTestId("mailbox-item-msg-p2")).toBeInTheDocument();
   });
 });

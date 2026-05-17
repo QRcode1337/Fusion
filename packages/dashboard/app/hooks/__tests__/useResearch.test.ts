@@ -66,6 +66,21 @@ describe("useResearch", () => {
       expect(result.current.runs).toHaveLength(1);
       expect(result.current.availability.available).toBe(true);
     });
+
+    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX}p1`) ?? "[]");
+    expect(cached[0]?.id).toBe("RR-1");
+  });
+
+  it("isolates cache by project", async () => {
+    localStorage.setItem(`${SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX}p1`, JSON.stringify([{ id: "RR-P1", query: "", title: "", status: "completed", createdAt: "", updatedAt: "" }]));
+    localStorage.setItem(`${SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX}p2`, JSON.stringify([{ id: "RR-P2", query: "", title: "", status: "completed", createdAt: "", updatedAt: "" }]));
+    mockListResearchRuns.mockImplementation(() => new Promise(() => {}));
+
+    const { result, rerender } = renderHook(({ projectId }) => useResearch({ projectId }), { initialProps: { projectId: "p1" } });
+    expect(result.current.runs[0]?.id).toBe("RR-P1");
+
+    rerender({ projectId: "p2" });
+    expect(result.current.runs[0]?.id).toBe("RR-P2");
   });
 
   it("loads selected run detail", async () => {

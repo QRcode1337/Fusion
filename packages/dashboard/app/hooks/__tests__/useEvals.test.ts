@@ -52,6 +52,9 @@ describe("useEvals", () => {
       expect(result.current.results[0]).toMatchObject({ id: "ER-1", runId: "RUN-1", taskId: "FN-1", taskTitle: "Task One" });
     });
 
+    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "[]");
+    expect(cached[0]?.id).toBe("ER-1");
+
     act(() => result.current.setFilters((prev) => ({ ...prev, q: "fn-1", runId: "RUN-1", scoreMin: "0.5", scoreMax: "1" })));
 
     await waitFor(() => {
@@ -64,6 +67,40 @@ describe("useEvals", () => {
       expect(result.current.selectedEval?.evidence).toHaveLength(1);
       expect(result.current.selectedEval?.followUps).toHaveLength(1);
     });
+  });
+
+  it("caps persisted results at 500", async () => {
+    const oversized = Array.from({ length: 620 }, (_, index) => ({
+      id: `ER-${index}`,
+      runId: "RUN-1",
+      taskId: `FN-${index}`,
+      taskSnapshot: { title: `Task ${index}` },
+      categoryScores: [],
+      evidence: [],
+      followUps: [],
+      createdAt: "2026-05-01T00:00:00.000Z",
+    }));
+    mockListEvals.mockResolvedValueOnce({ results: oversized, count: oversized.length });
+
+    renderHook(() => useEvals({ projectId: "p1" }));
+
+    await waitFor(() => {
+      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "[]");
+      expect(cached).toHaveLength(500);
+    });
+  });
+
+  it("isolates cache by project", () => {
+    localStorage.setItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`, JSON.stringify([{ id: "ER-P1", runId: "RUN", taskId: "FN-1", taskTitle: "P1", createdAt: "", overallScore: null, maxScore: null, categoryScores: [] }]));
+    localStorage.setItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p2`, JSON.stringify([{ id: "ER-P2", runId: "RUN", taskId: "FN-2", taskTitle: "P2", createdAt: "", overallScore: null, maxScore: null, categoryScores: [] }]));
+    mockListEvals.mockImplementation(() => new Promise(() => {}));
+    mockListEvalRuns.mockImplementation(() => new Promise(() => {}));
+
+    const { result, rerender } = renderHook(({ projectId }) => useEvals({ projectId }), { initialProps: { projectId: "p1" } });
+    expect(result.current.results[0]?.id).toBe("ER-P1");
+
+    rerender({ projectId: "p2" });
+    expect(result.current.results[0]?.id).toBe("ER-P2");
   });
 
   it("clears selection when refreshed list no longer contains selected eval", async () => {

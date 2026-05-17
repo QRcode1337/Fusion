@@ -56,4 +56,29 @@ describe("MissionManager cache hydration", () => {
     expect(screen.getByText("Cached Mission")).toBeInTheDocument();
     expect(screen.queryByText("Loading missions...")).not.toBeInTheDocument();
   });
+
+  it("caps persisted mission cache at 200 and isolates by project", async () => {
+    const oversized = Array.from({ length: 260 }, (_, index) => ({
+      id: `M-${index}`,
+      title: `Mission ${index}`,
+      description: "d",
+      status: "planning",
+      milestones: [],
+    }));
+    mockFetchMissions.mockResolvedValueOnce(oversized);
+
+    const { rerender } = render(
+      <MissionManager isOpen onClose={() => {}} addToast={() => {}} projectId="p1" />,
+    );
+
+    await screen.findByText("Mission 0");
+    const cachedP1 = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.MISSIONS_PREFIX}p1`) ?? "[]");
+    expect(cachedP1).toHaveLength(200);
+
+    localStorage.setItem(`${SWR_CACHE_KEYS.MISSIONS_PREFIX}p2`, JSON.stringify([{ id: "M-P2", title: "Project Two Mission", description: "", status: "planning", milestones: [] }]));
+    mockFetchMissions.mockImplementation(() => new Promise(() => {}));
+    rerender(<MissionManager isOpen onClose={() => {}} addToast={() => {}} projectId="p2" />);
+
+    expect(screen.getByText("Project Two Mission")).toBeInTheDocument();
+  });
 });
