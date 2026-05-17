@@ -4,6 +4,7 @@ import type { ChatRoom, ChatRoomMember, ChatRoomMessage } from "@fusion/core";
 import { useChatRooms } from "../useChatRooms";
 import * as apiModule from "../../api";
 import * as sseBusModule from "../../sse-bus";
+import { SWR_CACHE_KEYS } from "../../utils/swrCache";
 
 vi.mock("../../api", () => ({
   fetchChatRooms: vi.fn(),
@@ -78,6 +79,7 @@ describe("useChatRooms", () => {
       capturedEvents = sub.events ?? {};
       return unsubscribe;
     });
+    window.localStorage.clear();
     mockFetchChatRooms.mockResolvedValue({ rooms: [] });
     mockFetchChatRoomMembers.mockResolvedValue({ members: [] });
     mockFetchChatRoomMessages.mockResolvedValue({ messages: [] });
@@ -87,8 +89,25 @@ describe("useChatRooms", () => {
     mockClearChatRoomMessages.mockResolvedValue({ success: true, deletedCount: 1 });
   });
 
-  it("loads rooms on mount", async () => {
-    mockFetchChatRooms.mockResolvedValueOnce({ rooms: [room("room-1", "one", "2026-05-09T01:00:00.000Z")] });
+  it("hydrates cached rooms and active room synchronously", async () => {
+    const cachedRooms = [room("room-1", "one", "2026-05-09T01:00:00.000Z")];
+    window.localStorage.setItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`, JSON.stringify(cachedRooms));
+    window.localStorage.setItem(`${SWR_CACHE_KEYS.ACTIVE_CHAT_ROOM_ID}:proj-1`, JSON.stringify("room-1"));
+    mockFetchChatRooms.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // keep pending; assert fast-path hydration
+        }),
+    );
+
+    const { result } = renderHook(() => useChatRooms("proj-1"));
+
+    expect(result.current.rooms).toEqual(cachedRooms);
+    expect(result.current.activeRoom?.id).toBe("room-1");
+    expect(result.current.roomsLoading).toBe(false);
+  });
+
+  it("loads rooms on mount", async () => {    mockFetchChatRooms.mockResolvedValueOnce({ rooms: [room("room-1", "one", "2026-05-09T01:00:00.000Z")] });
     const { result } = renderHook(() => useChatRooms("proj-1"));
 
     await waitFor(() => expect(result.current.roomsLoading).toBe(false));
@@ -96,8 +115,18 @@ describe("useChatRooms", () => {
     expect(mockFetchChatRooms).toHaveBeenCalledWith({}, "proj-1");
   });
 
-  it("createRoom persists and loads active room members/messages", async () => {
-    const { result } = renderHook(() => useChatRooms("proj-1"));
+  it("writes rooms list to cache after successful refresh", async () => {
+    const rooms = [room("room-1", "one", "2026-05-09T01:00:00.000Z")];
+    mockFetchChatRooms.mockResolvedValueOnce({ rooms });
+
+    renderHook(() => useChatRooms("proj-1"));
+
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "[]")).toEqual(rooms);
+    });
+  });
+
+  it("createRoom persists and loads active room members/messages", async () => {    const { result } = renderHook(() => useChatRooms("proj-1"));
     mockFetchChatRoomMembers.mockResolvedValueOnce({ members: [roomMember("room-new", "agent-1")] });
     mockFetchChatRoomMessages.mockResolvedValueOnce({ messages: [roomMessage("msg-1", "room-new", "hello")] });
 
@@ -144,8 +173,17 @@ describe("useChatRooms", () => {
     await waitFor(() => expect(result.current.messages[0]?.id).toBe("msg-2"));
   });
 
-  it("handles room message SSE for active and inactive rooms", async () => {
-    const older = room("room-1", "one", "2026-05-09T01:00:00.000Z");
+  it("keeps messages out of cache payload", async () => {
+    const rooms = [room("room-1", "one", "2026-05-09T01:00:00.000Z")];
+    mockFetchChatRooms.mockResolvedValueOnce({ rooms });
+    const { result } = renderHook(() => useChatRooms("proj-1"));
+    await waitFor(() => expect(result.current.roomsLoading).toBe(false));
+
+    const cached = JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "[]") as Array<Record<string, unknown>>;
+    expect(cached[0]).not.toHaveProperty("messages");
+  });
+
+  it("handles room message SSE for active and inactive rooms", async () => {    const older = room("room-1", "one", "2026-05-09T01:00:00.000Z");
     const newer = room("room-2", "two", "2026-05-09T02:00:00.000Z");
     mockFetchChatRooms.mockResolvedValueOnce({ rooms: [older, newer] });
     const { result } = renderHook(() => useChatRooms("proj-1"));

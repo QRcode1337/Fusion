@@ -47,6 +47,12 @@ export function DashboardLoader({ stage }: DashboardLoaderProps) {
       clearCache(SWR_CACHE_KEYS.TASKS_PREFIX);
       clearCache(SWR_CACHE_KEYS.PROJECTS);
       clearCache(SWR_CACHE_KEYS.CURRENT_PROJECT_ID);
+      clearCache(SWR_CACHE_KEYS.AGENTS);
+      clearCache(SWR_CACHE_KEYS.AGENT_STATS);
+      clearCache(SWR_CACHE_KEYS.DOCUMENTS_PREFIX);
+      clearCache(SWR_CACHE_KEYS.TODO_LISTS_PREFIX);
+      clearCache(SWR_CACHE_KEYS.CHAT_ROOMS);
+      clearCache(SWR_CACHE_KEYS.ACTIVE_CHAT_ROOM_ID);
     }
     return versionUpdated;
   });

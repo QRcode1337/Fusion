@@ -33,6 +33,7 @@ describe("DashboardLoader", () => {
   beforeEach(() => {
     mockConsumeVersionUpdateFlag.mockReset();
     mockConsumeVersionUpdateFlag.mockReturnValue(false);
+    mockClearCache.mockReset();
   });
 
   it("renders projects stage with active first step and pending remaining steps", () => {
@@ -75,6 +76,15 @@ describe("DashboardLoader", () => {
 
     expect(screen.getByText("Updating to a new frontend version...")).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Updating Fusion dashboard" })).toBeInTheDocument();
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.TASKS_PREFIX);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.PROJECTS);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.CURRENT_PROJECT_ID);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.AGENTS);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.AGENT_STATS);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.DOCUMENTS_PREFIX);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.TODO_LISTS_PREFIX);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.CHAT_ROOMS);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.ACTIVE_CHAT_ROOM_ID);
   });
 
   it("keeps stage visuals stable across all stages", () => {
