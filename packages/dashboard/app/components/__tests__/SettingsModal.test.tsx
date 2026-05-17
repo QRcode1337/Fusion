@@ -1197,6 +1197,8 @@ describe("SettingsModal", () => {
       await waitForSettingsModalReady();
 
       expect(await screen.findByText(/Could not load detected remotes/i)).toBeInTheDocument();
+      const control = screen.getByRole("combobox", { name: "Project default tracking repo" });
+      await userEvent.selectOptions(control, "__custom__");
       expect(screen.getByPlaceholderText("owner/repo")).toBeInTheDocument();
     });
 
