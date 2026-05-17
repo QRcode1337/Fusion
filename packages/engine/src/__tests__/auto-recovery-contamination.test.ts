@@ -3,6 +3,13 @@ import type { Task } from "@fusion/core";
 import { AutoRecoveryDispatcher } from "../auto-recovery.js";
 import { ContaminationAutoRecoveryHandler } from "../auto-recovery-handlers/contamination.js";
 
+vi.mock("../branch-conflicts.js", () => ({
+  classifyForeignOnlyContamination: vi.fn(async () => ({ kind: "foreign-only-no-own-work" })),
+}));
+vi.mock("../recovery/foreign-only-contamination.js", () => ({
+  recoverForeignOnlyContamination: vi.fn(async () => ({ recovered: true, subtype: "reanchor" })),
+}));
+
 const baseTask = { id: "FN-1", column: "in-progress", recoveryRetryCount: 0 } as Task;
 
 describe("ContaminationAutoRecoveryHandler", () => {
@@ -22,6 +29,14 @@ describe("ContaminationAutoRecoveryHandler", () => {
     expect(taskStore.moveTask).toHaveBeenCalledWith("FN-1", "todo", expect.objectContaining({ preserveWorktree: true }));
     expect(taskStore.updateTask).toHaveBeenCalledWith("FN-1", expect.objectContaining({ paused: false, pausedReason: null, error: null }));
     expect(runAudit.database).toHaveBeenCalledWith(expect.objectContaining({ type: "contamination:retry-issued" }));
+  });
+
+  it("uses foreign-only recovery helper when branch/worktree metadata exists", async () => {
+    const taskStore = { moveTask: vi.fn(), updateTask: vi.fn() } as any;
+    const runAudit = { database: vi.fn(), git: vi.fn(), filesystem: vi.fn() } as any;
+    const handler = new ContaminationAutoRecoveryHandler({ taskStore, runAudit, repoDir: process.cwd() });
+    await handler.issueRetry({ class: "branch-cross-contamination", taskId: "FN-1", pausedReason: "branch-cross-contamination", evidence: { ownCommits: 0, foreignAttributedCommits: 2 } }, { action: "retry", rationale: "mode-programmatic", auditMetadata: {}, legacyPausedReason: "x" }, { task: { ...baseTask, branch: "fusion/fn-1", worktree: "/tmp/fn-1", baseCommitSha: "main" } as Task, retryCount: 1, settings: { mode: "programmatic", maxRetries: 3 } });
+    expect(runAudit.database).toHaveBeenCalledWith(expect.objectContaining({ type: "contamination:retry-issued", metadata: expect.objectContaining({ recoveryKind: "foreign-only", subtype: "reanchor" }) }));
   });
 
   it("emits irreducible pause and skips retry for destructive ambiguity", async () => {
