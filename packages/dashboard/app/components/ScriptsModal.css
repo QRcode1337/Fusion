@@ -2985,6 +2985,7 @@
 .gm-pull-split {
   position: relative;
   display: flex;
+  align-items: stretch;
   flex: 1 1 calc(var(--space-2xl) * 5);
 }
 
@@ -2999,6 +3000,7 @@
 
 .gm-pull-split-toggle {
   flex: 0 0 auto;
+  align-self: stretch;
   width: auto;
   min-width: var(--space-xl);
   border-top-left-radius: 0;
