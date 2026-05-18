@@ -4163,7 +4163,7 @@ export function SettingsModal({
                 />
                 Recycle worktrees
               </label>
-              <small>When enabled, completed task worktrees are returned to an idle pool instead of being deleted, preserving build caches for faster startup</small>
+              <small>Off by default (opt-in). When enabled, completed task worktrees are returned to an idle pool instead of being deleted, preserving build caches for faster startup</small>
             </div>
             <div className="form-group">
               <label htmlFor="executorAllowSiblingBranchRename" className="checkbox-label">

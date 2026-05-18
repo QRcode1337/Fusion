@@ -263,7 +263,7 @@ Sandbox backend precedence is:
 | `worktreeInitCommand` | `string` | `undefined` | Shell command run after worktree creation. For pnpm repos, prefer `pnpm install --frozen-lockfile` for deterministic bootstrap. |
 | `testCommand` | `string` | `undefined` | Merge-time test command (hard gate). When unset, Fusion auto-detects from lockfile. |
 | `buildCommand` | `string` | `undefined` | Merge-time build command (hard gate). |
-| `recycleWorktrees` | `boolean` | `false` | Reuse worktrees from a pool for faster startup. |
+| `recycleWorktrees` | `boolean` | `false` | Default: off (opt-in). Reuse worktrees from a pool for faster startup. |
 | `executorAllowSiblingBranchRename` | `boolean` | `false` | Opt back into the legacy executor behavior that silently allocates sibling branches (`fusion/<task-id>-2`, `-2-2`, …) when the canonical task branch is already checked out elsewhere. When disabled (default), branch conflicts fail loudly, leave the task in `todo` with `status: "failed"`, and expose stranded commits for explicit recovery via [`fn task branch-recovery`](./cli-reference.md#fn-task). See [Task Management → Branch conflict recovery](./task-management.md#branch-conflict-recovery). The dashboard Settings modal exposes the same toggle with warning copy because this legacy mode is discouraged. |
 | `worktreeNaming` | `"random" \| "task-id" \| "task-title"` | `"random"` | Naming mode for new worktree directories. |
 
