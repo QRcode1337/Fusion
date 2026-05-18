@@ -4039,6 +4039,9 @@ export async function applyLayer3ConflictScopePartition(params: {
     // In merge and rebase conflict contexts, `--ours` resolves to the
     // integration-target side (main bytes), which we keep for out-of-scope files.
     await resolveWithOurs(file, rootDir);
+    // `resolveWithOurs` stages the file; unstage it so the squash does not
+    // carry out-of-scope paths even though working-tree bytes now match main.
+    await execAsync(`git reset HEAD -- ${quoteArg(file)}`, { cwd: rootDir });
   }
 
   const { stdout: stagedOut } = await execAsync("git diff --cached --name-only", { cwd: rootDir, encoding: "utf-8" });
