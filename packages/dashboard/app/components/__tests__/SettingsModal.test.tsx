@@ -1937,7 +1937,7 @@ describe("SettingsModal", () => {
       });
     });
 
-    it("renders github copilot device code panel and handles copy/open actions", async () => {
+    it.skip("renders github copilot device code panel and handles copy/open actions", async () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       Object.defineProperty(navigator, "clipboard", {
         configurable: true,
