@@ -103,7 +103,12 @@ export function PrChecksList({ checks, rollup: _rollup, lastCheckedAt, loading, 
                   {duration ? <span className="pr-checks__duration">{duration}</span> : null}
                 </div>
                 {check.detailsUrl ? (
-                  <a href={check.detailsUrl} target="_blank" rel="noreferrer noopener" className={failing ? "btn btn-sm" : "pr-checks__details-link"}>
+                  <a
+                    href={check.detailsUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className={failing ? "pr-checks__details-link pr-checks__details-link--failing" : "pr-checks__details-link"}
+                  >
                     View details <ExternalLink />
                   </a>
                 ) : null}
