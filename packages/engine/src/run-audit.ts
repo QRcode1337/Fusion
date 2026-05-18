@@ -231,8 +231,12 @@ export type DatabaseMutationType =
   | "task:auto-rebound-paused-scope-decay"
   /** Metadata: { taskId, targetTaskId, targetColumn, chainDepth: number } */
   | "task:auto-archived-meta-resolved"
+  /** Metadata: { taskId, targetTaskId, targetColumn, chainDepth: number, blockedBy: string[] } */
+  | "task:auto-archive-meta-resolved-skipped"
   /** Metadata: { taskId, targetTaskId, chainDepth: number, stalledMs: number } */
   | "task:auto-archived-meta-stalled"
+  /** Metadata: { taskId, targetTaskId, chainDepth: number, stalledMs: number, blockedBy: string[] } */
+  | "task:auto-archive-meta-stalled-skipped"
   /** Metadata: { holderIds: string[], followerCount: number, windowMs: number, blockedGrowth: number } */
   | "task:auto-board-stall-broken"
   /** Metadata: { holderIds: string[], followerCount: number, windowMs: number, ntfyDispatched: boolean } */

@@ -2950,6 +2950,10 @@ export interface ProjectSettings {
    *  advancing before self-healing auto-archives it as superseded.
    *  Default: 7200000 (2 hours). Set to 0 to disable. */
   metaTaskStallAutoCloseMs?: number;
+  /** Grace period in milliseconds used by meta-task auto-archive guards to treat
+   *  recent executor activity as in-flight and skip destructive auto-archive.
+   *  Default: 1800000 (30 minutes). Set to 0 to disable this guard. */
+  metaTaskActiveExecutionGraceMs?: number;
   /** Rolling window in milliseconds for board-stall auto-recovery evaluation.
    *  Default: 7200000 (2 hours). */
   boardStallSweepWindowMs?: number;

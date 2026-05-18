@@ -2685,8 +2685,49 @@ export class SelfHealingManager {
     return tasks.filter((task) => typeof task.blockedBy === "string" && task.blockedBy.trim().length > 0).length;
   }
 
+  private async evaluateMetaAutoArchiveGuards(task: Task): Promise<{ block: false } | { block: true; reasons: string[] }> {
+    const reasons: string[] = [];
+
+    try {
+      const ahead = await isBranchAheadOfBase(task, this.options.rootDir, task.baseBranch ?? task.mergeDetails?.mergeTargetBranch ?? "main");
+      if (ahead && ahead.aheadCount > 0) reasons.push("branch-has-unique-commits");
+    } catch (err: unknown) {
+      log.warn(`Meta auto-archive branch probe failed for ${task.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    const settings = await this.store.getSettings();
+    const graceMs = Number(settings.metaTaskActiveExecutionGraceMs ?? 30 * 60_000);
+    if (graceMs > 0) {
+      const now = Date.now();
+      const activityMs = Date.parse(task.executionStartedAt ?? task.columnMovedAt ?? task.updatedAt ?? "");
+      const ageMs = now - activityMs;
+      const columnMovedAtMs = Date.parse(task.columnMovedAt ?? "");
+      const executionStartedAtMs = Date.parse(task.executionStartedAt ?? "");
+      const transitionedRecentlyFromInProgress =
+        task.column !== "in-progress" &&
+        Number.isFinite(columnMovedAtMs) &&
+        Number.isFinite(executionStartedAtMs) &&
+        columnMovedAtMs >= executionStartedAtMs &&
+        now - columnMovedAtMs < graceMs;
+      const activeOrRecentlyInProgress = task.column === "in-progress" || transitionedRecentlyFromInProgress;
+      if (Number.isFinite(ageMs) && ageMs < graceMs && activeOrRecentlyInProgress) {
+        reasons.push("recent-executor-activity");
+      }
+    }
+
+    if ((task.taskDoneRetryCount ?? 0) > 0) reasons.push("task-done-retry-pending");
+
+    if (task.mergeDetails?.commitSha || task.status === "merging" || task.status === "merging-pr" || task.status === "failed") {
+      reasons.push("merge-in-progress");
+    }
+
+    if (task.worktree && activeSessionRegistry.isPathActive(task.worktree)) reasons.push("active-session");
+
+    return reasons.length > 0 ? { block: true, reasons } : { block: false };
+  }
+
   async autoArchiveResolvedMetaTasks(reboundedTargets?: Set<string>): Promise<number> {
-    const tasks = await this.store.listTasks({ slim: true, includeArchived: true });
+    const tasks = await this.store.listTasks({ slim: false, includeArchived: true });
     const byId = new Map(tasks.map((task) => [task.id.toUpperCase(), task]));
     let archived = 0;
     for (const task of tasks) {
@@ -2699,6 +2740,17 @@ export class SelfHealingManager {
       const resolved = Boolean(target && !this.classifyMetaTask(target).isMeta && (target.column === "done" || target.column === "archived" || target.column === "todo"));
       const rebounded = Boolean(reboundedTargets?.has(targetTaskId));
       if (!resolved && !rebounded && chainDepth < 2) continue;
+      const guardResult = await this.evaluateMetaAutoArchiveGuards(task);
+      if (guardResult.block) {
+        const auditor = createRunAuditor(this.store, { runId: generateSyntheticRunId("fn4890-meta", task.id), agentId: "self-healing", taskId: task.id, phase: "auto-archive-meta-resolved-skipped" });
+        await auditor.database({
+          type: "task:auto-archive-meta-resolved-skipped",
+          target: task.id,
+          metadata: { taskId: task.id, targetTaskId, targetColumn: target?.column ?? "unknown", chainDepth, blockedBy: guardResult.reasons },
+        });
+        log.log(`[self-healing] skipped meta-resolved auto-archive for ${task.id}: ${guardResult.reasons.join(",")}`);
+        continue;
+      }
       try {
         await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): target ${targetTaskId} resolved/superseded.`);
         await this.archiveMetaTask(task.id);
@@ -2716,7 +2768,7 @@ export class SelfHealingManager {
     const settings = await this.store.getSettings();
     const thresholdMs = Number(settings.metaTaskStallAutoCloseMs ?? 2 * 60 * 60_000);
     if (thresholdMs === 0) return 0;
-    const tasks = await this.store.listTasks({ slim: true, includeArchived: false });
+    const tasks = await this.store.listTasks({ slim: false, includeArchived: false });
     const byId = new Map(tasks.map((task) => [task.id.toUpperCase(), task]));
     let archived = 0;
     const now = Date.now();
@@ -2732,6 +2784,17 @@ export class SelfHealingManager {
       const targetMovedAtMs = Date.parse(target?.columnMovedAt ?? target?.updatedAt ?? "");
       const targetStalled = !Number.isFinite(targetMovedAtMs) || (now - targetMovedAtMs >= thresholdMs);
       if (chainDepth < 2 && !targetStalled) continue;
+      const guardResult = await this.evaluateMetaAutoArchiveGuards(task);
+      if (guardResult.block) {
+        const auditor = createRunAuditor(this.store, { runId: generateSyntheticRunId("fn4890-meta", task.id), agentId: "self-healing", taskId: task.id, phase: "auto-archive-meta-stalled-skipped" });
+        await auditor.database({
+          type: "task:auto-archive-meta-stalled-skipped",
+          target: task.id,
+          metadata: { taskId: task.id, targetTaskId, chainDepth, stalledMs: Math.max(ageMs, 0), blockedBy: guardResult.reasons },
+        });
+        log.log(`[self-healing] skipped meta-stalled auto-archive for ${task.id}: ${guardResult.reasons.join(",")}`);
+        continue;
+      }
       try {
         await this.store.logEntry(task.id, `Auto-archived meta-task (FN-4890): superseded — not spawning further meta; rely on self-heal on target ${targetTaskId}`);
         await this.archiveMetaTask(task.id);
