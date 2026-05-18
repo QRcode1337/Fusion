@@ -530,11 +530,19 @@ export {
   getTaskPriorityRank,
   compareTaskPriority,
   compareTasksByPriorityThenAgeAndId,
+  compareTasksByPriorityFanoutThenAgeAndId,
   sortTasksByPriorityThenAgeAndId,
+  sortTasksByPriorityFanoutThenAgeAndId,
+  buildUnblockWeightMap,
   compareTaskIdNumeric,
   sortTasksForDisplayColumn,
 } from "./task-priority.js";
-export type { TaskPrioritySortable, TaskColumnSortable } from "./task-priority.js";
+export type {
+  TaskPrioritySortable,
+  TaskColumnSortable,
+  BuildUnblockWeightMapOptions,
+  PriorityFanoutComparatorContext,
+} from "./task-priority.js";
 
 // ── Mission Hierarchy Types ────────────────────────────────────────────
 

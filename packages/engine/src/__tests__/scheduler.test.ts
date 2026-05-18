@@ -1046,6 +1046,115 @@ describe("Scheduler", () => {
     });
   });
 
+  describe("FN-4969 dependency-unblock prioritization", () => {
+    it("promotes higher-fanout todo task over older same-priority tasks", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      const tasks = [
+        createMockTask({ id: "FN-010", column: "todo", priority: "normal", createdAt: "2026-01-01T00:02:00.000Z" }),
+        createMockTask({ id: "FN-011", column: "todo", priority: "normal", createdAt: "2026-01-01T00:01:00.000Z" }),
+        createMockTask({ id: "FN-012", column: "todo", priority: "normal", createdAt: "2026-01-01T00:03:00.000Z" }),
+        createMockTask({ id: "FN-101", column: "todo", dependencies: ["FN-010"] }),
+        createMockTask({ id: "FN-102", column: "todo", dependencies: ["FN-010"] }),
+        createMockTask({ id: "FN-103", column: "todo", dependencies: ["FN-010"] }),
+      ];
+
+      const moveTask = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore({
+        listTasks: vi.fn().mockResolvedValue(tasks),
+        getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 1, maxWorktrees: 10, groupOverlappingFiles: false }),
+        moveTask,
+      });
+
+      const scheduler = new Scheduler(store);
+      (scheduler as any).running = true;
+      await scheduler.schedule();
+
+      expect(moveTask.mock.calls[0][0]).toBe("FN-010");
+    });
+
+    it("keeps urgent tasks ahead of lower-priority high-fanout tasks", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      const tasks = [
+        createMockTask({ id: "FN-020", column: "todo", priority: "urgent", createdAt: "2026-01-01T00:02:00.000Z" }),
+        createMockTask({ id: "FN-021", column: "todo", priority: "normal", createdAt: "2026-01-01T00:01:00.000Z" }),
+        createMockTask({ id: "FN-201", column: "todo", dependencies: ["FN-021"] }),
+        createMockTask({ id: "FN-202", column: "todo", dependencies: ["FN-021"] }),
+        createMockTask({ id: "FN-203", column: "todo", dependencies: ["FN-021"] }),
+        createMockTask({ id: "FN-204", column: "todo", dependencies: ["FN-021"] }),
+        createMockTask({ id: "FN-205", column: "todo", dependencies: ["FN-021"] }),
+      ];
+
+      const moveTask = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore({
+        listTasks: vi.fn().mockResolvedValue(tasks),
+        getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 1, maxWorktrees: 10, groupOverlappingFiles: false }),
+        moveTask,
+      });
+
+      const scheduler = new Scheduler(store);
+      (scheduler as any).running = true;
+      await scheduler.schedule();
+
+      expect(moveTask.mock.calls[0][0]).toBe("FN-020");
+    });
+
+    it("falls back to age then numeric id when fanout ties", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      const tasks = [
+        createMockTask({ id: "FN-029", column: "todo", priority: "normal", createdAt: "2026-01-01T00:01:00.000Z" }),
+        createMockTask({ id: "FN-028", column: "todo", priority: "normal", createdAt: "2026-01-01T00:01:00.000Z" }),
+        createMockTask({ id: "FN-027", column: "todo", priority: "normal", createdAt: "2026-01-01T00:00:00.000Z" }),
+        createMockTask({ id: "FN-301", column: "todo", dependencies: ["FN-028"] }),
+        createMockTask({ id: "FN-302", column: "todo", dependencies: ["FN-029"] }),
+        createMockTask({ id: "FN-303", column: "todo", dependencies: ["FN-027"] }),
+      ];
+
+      const moveTask = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore({
+        listTasks: vi.fn().mockResolvedValue(tasks),
+        getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 3, maxWorktrees: 10, groupOverlappingFiles: false }),
+        moveTask,
+      });
+
+      const scheduler = new Scheduler(store);
+      (scheduler as any).running = true;
+      await scheduler.schedule();
+
+      expect(moveTask.mock.calls.slice(0, 3).map((call: unknown[]) => call[0])).toEqual(["FN-027", "FN-028", "FN-029"]);
+    });
+
+    it("does not count done/archived dependents toward unblock priority", async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      const tasks = [
+        createMockTask({ id: "FN-040", column: "todo", priority: "normal", createdAt: "2026-01-01T00:00:00.000Z" }),
+        createMockTask({ id: "FN-041", column: "todo", priority: "normal", createdAt: "2026-01-01T00:01:00.000Z" }),
+        createMockTask({ id: "FN-401", column: "done", dependencies: ["FN-040"] }),
+        createMockTask({ id: "FN-402", column: "archived", dependencies: ["FN-040"] }),
+      ];
+
+      const moveTask = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore({
+        listTasks: vi.fn().mockResolvedValue(tasks),
+        getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 10, groupOverlappingFiles: false }),
+        moveTask,
+      });
+
+      const scheduler = new Scheduler(store);
+      (scheduler as any).running = true;
+      await scheduler.schedule();
+
+      expect(moveTask.mock.calls.slice(0, 2).map((call: unknown[]) => call[0])).toEqual(["FN-040", "FN-041"]);
+    });
+  });
+
   describe("overlap ignore paths", () => {
     it("allows scheduling when overlap is only on ignored files", async () => {
       vi.mocked(existsSync).mockReturnValue(true);

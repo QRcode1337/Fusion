@@ -6,12 +6,16 @@ import {
   isTaskPriority,
   normalizeTaskPriority,
   sortTasksByPriorityThenAgeAndId,
+  sortTasksByPriorityFanoutThenAgeAndId,
+  compareTasksByPriorityFanoutThenAgeAndId,
+  buildUnblockWeightMap,
   compareTaskIdNumeric,
   sortTasksForDisplayColumn,
 } from "../task-priority.js";
 import {
   DEFAULT_TASK_PRIORITY,
   TASK_PRIORITIES,
+  type Task,
   type TaskPriority,
 } from "../types.js";
 import type { PrCheckState, PrCheckStatus } from "../index.js";
@@ -61,6 +65,72 @@ describe("task-priority", () => {
   it("compares numeric IDs with locale fallback", () => {
     expect(compareTaskIdNumeric("FN-2", "FN-10")).toBeLessThan(0);
     expect(compareTaskIdNumeric("TASK-B", "TASK-A")).toBeGreaterThan(0);
+  });
+
+  it("prefers higher fanout tasks within the same priority", () => {
+    const tasks = [
+      { id: "FN-2", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+      { id: "FN-1", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+    ];
+
+    const sorted = sortTasksByPriorityFanoutThenAgeAndId(tasks, new Map([["FN-2", 3], ["FN-1", 1]]));
+    expect(sorted.map((task) => task.id)).toEqual(["FN-2", "FN-1"]);
+  });
+
+  it("keeps urgent ahead of lower priority regardless of fanout", () => {
+    const urgent = { id: "FN-10", createdAt: "2026-01-01T00:00:00.000Z", priority: "urgent" as const };
+    const high = { id: "FN-11", createdAt: "2026-01-01T00:00:00.000Z", priority: "high" as const };
+
+    const cmp = compareTasksByPriorityFanoutThenAgeAndId(urgent, high, {
+      unblockWeights: new Map([["FN-11", 9_999]]),
+    });
+    expect(cmp).toBeLessThan(0);
+  });
+
+  it("falls back to createdAt then id when fanout ties", () => {
+    const tasks = [
+      { id: "FN-9", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+      { id: "FN-8", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+      { id: "FN-7", createdAt: "2025-12-31T00:00:00.000Z", priority: "normal" as const },
+    ];
+
+    const sorted = sortTasksByPriorityFanoutThenAgeAndId(tasks, new Map([["FN-9", 2], ["FN-8", 2], ["FN-7", 2]]));
+    expect(sorted.map((task) => task.id)).toEqual(["FN-7", "FN-8", "FN-9"]);
+  });
+
+  it("uses zero weight for tasks without dependents and preserves legacy tie behavior", () => {
+    const tasks = [
+      { id: "FN-2", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+      { id: "FN-1", createdAt: "2026-01-01T00:00:00.000Z", priority: "normal" as const },
+    ];
+
+    const sorted = sortTasksByPriorityFanoutThenAgeAndId(tasks, new Map());
+    expect(sorted.map((task) => task.id)).toEqual(["FN-1", "FN-2"]);
+  });
+
+  it("buildUnblockWeightMap ignores done/archived dependents", () => {
+    const makeTask = (task: Partial<Task> & Pick<Task, "id" | "column" | "createdAt" | "updatedAt" | "description">): Task => ({
+      id: task.id,
+      description: task.description,
+      column: task.column,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      dependencies: task.dependencies ?? [],
+      steps: [],
+      currentStep: 1,
+      log: [],
+      ...task,
+    });
+
+    const tasks: Task[] = [
+      makeTask({ id: "FN-1", description: "blocker", column: "todo", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" }),
+      makeTask({ id: "FN-2", description: "active dependent", column: "todo", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", dependencies: ["FN-1"] }),
+      makeTask({ id: "FN-3", description: "done dependent", column: "done", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", dependencies: ["FN-1"] }),
+      makeTask({ id: "FN-4", description: "archived dependent", column: "archived", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", dependencies: ["FN-1"] }),
+    ];
+
+    const weights = buildUnblockWeightMap(tasks);
+    expect(weights.get("FN-1")).toBe(1_000_001);
   });
 
   it("applies board/list default ordering semantics by column", () => {

@@ -607,7 +607,7 @@ See [Memory Plugin Contract](./memory-plugin-contract.md) for the full plan.
   - Advisory and blocking paths are both logged to task logs for operator visibility.
 
 ### Scheduling and execution
-- `Scheduler` (`scheduler.ts`) — dependency-aware task scheduling that dispatches eligible todo tasks by priority first, then FIFO (`createdAt` ascending) within each priority tier.
+- `Scheduler` (`scheduler.ts`) — dependency-aware task scheduling that dispatches eligible todo tasks by priority first, then dependency-unblock fanout within the same priority class (FN-4969), then FIFO (`createdAt` ascending) with task-id fallback. `urgent` always stays ahead of lower priorities, and overlap/file-scope blockers are excluded from fanout weighting.
   - `blockedBy` invariant (FN-3924/FN-4091): the field is only durable when it references a current unresolved explicit dependency (or, for dependency-free tasks, an active overlap blocker). Completion gating now validates `blockedBy` through live task resolution: missing blockers and blockers already in `done`/`archived` are treated as stale, while only still-active blockers continue to prevent `fn_task_done`. If no current blocker remains, scheduler/event reconciliation clears `blockedBy` to `null` and re-evaluates from live task state.
 
 #### BlockedBy stamping invariants

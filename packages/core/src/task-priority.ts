@@ -1,5 +1,6 @@
+import { computeBlockerFanoutMap } from "./blocker-fanout.js";
 import { DEFAULT_TASK_PRIORITY, TASK_PRIORITIES } from "./types.js";
-import type { TaskPriority } from "./types.js";
+import type { Task, TaskPriority } from "./types.js";
 
 export interface TaskPrioritySortable {
   id: string;
@@ -82,6 +83,99 @@ export function sortTasksByPriorityThenAgeAndId<T extends TaskPrioritySortable>(
   tasks: readonly T[],
 ): T[] {
   return [...tasks].sort(compareTasksByPriorityThenAgeAndId);
+}
+
+const FANOUT_SECONDARY_WEIGHT_MULTIPLIER = 1_000_000;
+const UNBLOCK_ACTIVE_COLUMNS = new Set<Task["column"]>(["triage", "todo", "in-progress", "in-review"]);
+const DONE_COLUMNS = new Set<Task["column"]>(["done", "archived"]);
+
+export interface BuildUnblockWeightMapOptions {
+  maxAutoMergeRetries?: number;
+}
+
+function countUnmetDependencies(task: Task, taskById: Map<string, Task>): number {
+  let unmet = 0;
+  for (const dependencyId of task.dependencies ?? []) {
+    const dependency = taskById.get(dependencyId);
+    if (!dependency) {
+      unmet += 1;
+      continue;
+    }
+    if (DONE_COLUMNS.has(dependency.column)) {
+      continue;
+    }
+    unmet += 1;
+  }
+  return unmet;
+}
+
+export function buildUnblockWeightMap(
+  tasks: readonly Task[],
+  options: BuildUnblockWeightMapOptions = {},
+): Map<string, number> {
+  const taskList = [...tasks];
+  const fanout = computeBlockerFanoutMap(taskList, options.maxAutoMergeRetries ?? 0);
+  const taskById = new Map(taskList.map((task) => [task.id, task]));
+  const weights = new Map<string, number>();
+
+  for (const [blockerId, entry] of fanout) {
+    let primaryOnlyUnmetCount = 0;
+    let secondaryActiveDependentCount = 0;
+
+    for (const dependentId of entry.dependencyDependentIds) {
+      const dependent = taskById.get(dependentId);
+      if (!dependent || !UNBLOCK_ACTIVE_COLUMNS.has(dependent.column)) {
+        continue;
+      }
+      secondaryActiveDependentCount += 1;
+      if (countUnmetDependencies(dependent, taskById) === 1) {
+        primaryOnlyUnmetCount += 1;
+      }
+    }
+
+    const weight = primaryOnlyUnmetCount * FANOUT_SECONDARY_WEIGHT_MULTIPLIER + secondaryActiveDependentCount;
+    weights.set(blockerId, weight);
+  }
+
+  return weights;
+}
+
+export interface PriorityFanoutComparatorContext {
+  unblockWeights: ReadonlyMap<string, number>;
+}
+
+/**
+ * FN-4969: within the same priority class, prefer tasks that unblock the most dependency-bound work.
+ * This must never reorder across priority classes — urgent user work always outranks fanout.
+ */
+export function compareTasksByPriorityFanoutThenAgeAndId<T extends TaskPrioritySortable>(
+  a: T,
+  b: T,
+  ctx: PriorityFanoutComparatorContext,
+): number {
+  const priorityCmp = compareTaskPriority(a.priority, b.priority);
+  if (priorityCmp !== 0) {
+    return priorityCmp;
+  }
+
+  const aWeight = ctx.unblockWeights.get(a.id) ?? 0;
+  const bWeight = ctx.unblockWeights.get(b.id) ?? 0;
+  if (aWeight !== bWeight) {
+    return bWeight - aWeight;
+  }
+
+  if (a.createdAt !== b.createdAt) {
+    return a.createdAt.localeCompare(b.createdAt);
+  }
+
+  return compareTaskIdNumeric(a.id, b.id);
+}
+
+export function sortTasksByPriorityFanoutThenAgeAndId<T extends TaskPrioritySortable>(
+  tasks: readonly T[],
+  unblockWeights: ReadonlyMap<string, number>,
+): T[] {
+  return [...tasks].sort((a, b) => compareTasksByPriorityFanoutThenAgeAndId(a, b, { unblockWeights }));
 }
 
 function getDoneSortTimestamp(task: TaskColumnSortable): number {

@@ -1,7 +1,8 @@
 import {
   getCurrentRepo,
   resolveDependencyOrder,
-  sortTasksByPriorityThenAgeAndId,
+  sortTasksByPriorityFanoutThenAgeAndId,
+  buildUnblockWeightMap,
   computeBlockerFanoutMap,
   HIGH_FANOUT_BLOCKER_TODO_THRESHOLD,
   type TaskStore,
@@ -812,7 +813,18 @@ export class Scheduler {
 
       if (todo.length === 0) return;
 
-      todo = sortTasksByPriorityThenAgeAndId(todo);
+      const maxAutoMergeRetries =
+        typeof settings.maxAutoMergeRetries === "number" ? settings.maxAutoMergeRetries : undefined;
+      const unblockWeights = buildUnblockWeightMap(tasks, {
+        maxAutoMergeRetries,
+      });
+      todo = sortTasksByPriorityFanoutThenAgeAndId(todo, unblockWeights);
+      const topWeightedTask = todo.find((candidate) => (unblockWeights.get(candidate.id) ?? 0) >= 1);
+      if (topWeightedTask) {
+        schedulerLog.log(
+          `Dispatch ordering: priority+fanout (top: ${topWeightedTask.id}=${unblockWeights.get(topWeightedTask.id) ?? 0})`,
+        );
+      }
 
       /**
        * Pre-compute file scopes for all currently active tasks (in-progress
