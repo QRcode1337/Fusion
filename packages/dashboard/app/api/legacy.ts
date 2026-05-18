@@ -66,6 +66,7 @@ import type {
   TaskPriority,
   TaskSourceIssue,
   PrConflictState,
+  PrStatus,
   ManagedDockerNodeInput,
   DockerNodeConfig,
   DockerHostConfig,
@@ -2186,11 +2187,18 @@ export function updateGitRemoteUrl(name: string, url: string, projectId?: string
 export interface PrInfo {
   url: string;
   number: number;
-  status: "open" | "closed" | "merged" | "draft";
+  status: PrStatus;
   title: string;
   headBranch: string;
   baseBranch: string;
   commentCount: number;
+  isDraft?: boolean;
+  draft?: boolean;
+  autoMergeOnGreen?: boolean;
+  autoMergeStrategy?: "merge" | "squash" | "rebase";
+  lastMergeError?: string;
+  lastMergeErrorAt?: string;
+  checkRollup?: "success" | "failure" | "pending" | "none";
   mergeable?: PrConflictState;
   lastCommentAt?: string;
   lastCheckedAt?: string;
