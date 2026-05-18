@@ -1642,8 +1642,8 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
 
     if (trimmed === "/clear" || trimmed === "/new") {
       clearComposerState();
-      stopStreaming();
       clearPendingMessage();
+      stopStreaming();
       void createSession({
         agentId: activeSession.agentId,
         modelProvider: activeSession.modelProvider ?? undefined,

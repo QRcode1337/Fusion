@@ -1988,16 +1988,16 @@ export function QuickChatFAB({
           await roomsState.clearRoom(roomsState.activeRoom.id);
           setHelpMessageVisible(false);
         } else if (chatMode === "model") {
-          stopStreaming();
           clearPendingMessage();
+          stopStreaming();
           const parsed = parseModelSelection(resolvedModelSelection);
           if (!parsed) {
             return;
           }
           await startFreshSession(FN_AGENT_ID, parsed.modelProvider, parsed.modelId);
         } else if (selectedAgentId) {
-          stopStreaming();
           clearPendingMessage();
+          stopStreaming();
           await startFreshSession(selectedAgentId);
         }
       } catch {
