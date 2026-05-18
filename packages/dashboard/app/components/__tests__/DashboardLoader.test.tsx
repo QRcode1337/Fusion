@@ -85,6 +85,7 @@ describe("DashboardLoader", () => {
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.TODO_LISTS_PREFIX);
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.CHAT_ROOMS);
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.ACTIVE_CHAT_ROOM_ID);
+    expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.CHAT_SESSIONS_PREFIX);
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.INSIGHTS_PREFIX);
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.INSIGHT_LATEST_RUN_PREFIX);
     expect(mockClearCache).toHaveBeenCalledWith(SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX);

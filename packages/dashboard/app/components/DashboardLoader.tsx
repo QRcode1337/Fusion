@@ -53,6 +53,7 @@ export function DashboardLoader({ stage }: DashboardLoaderProps) {
       clearCache(SWR_CACHE_KEYS.TODO_LISTS_PREFIX);
       clearCache(SWR_CACHE_KEYS.CHAT_ROOMS);
       clearCache(SWR_CACHE_KEYS.ACTIVE_CHAT_ROOM_ID);
+      clearCache(SWR_CACHE_KEYS.CHAT_SESSIONS_PREFIX);
       clearCache(SWR_CACHE_KEYS.INSIGHTS_PREFIX);
       clearCache(SWR_CACHE_KEYS.INSIGHT_LATEST_RUN_PREFIX);
       clearCache(SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX);
