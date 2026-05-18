@@ -3973,6 +3973,12 @@ export class TaskExecutor {
             const implicitCheck = await this.store.getTask(task.id);
             if (implicitCheck.steps.length > 0 &&
                 implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
+              // Implicit path has no summary; evaluateTaskDoneRefusal will skip summary-claims-incomplete and only enforce pending-code-review-revise / bulk-step-completion-without-review.
+              const refusal = evaluateTaskDoneRefusal(implicitCheck, {}, codeReviewVerdicts);
+              if (!refusal.ok) {
+                await this.handleImplicitTaskDoneRefusal(implicitCheck, worktreePath, refusal);
+                return;
+              }
               taskDone = true;
               executorLog.log(`${task.id} all steps done — treating as implicit fn_task_done`);
               await this.store.logEntry(task.id, "All steps complete — implicit fn_task_done (agent did not call tool explicitly)", undefined, this.currentRunContext);
@@ -4046,6 +4052,7 @@ export class TaskExecutor {
           } else {
             let taskDoneSessionRetries = 0;
             let retryAbortedDueToReclaim = false;
+            let refusalHandled = false;
             while (!taskDone && taskDoneSessionRetries < MAX_TASK_DONE_SESSION_RETRIES) {
               const liveTask = await this.store.getTask(task.id);
               const hasExplicitWorktreeBinding = typeof liveTask.worktree === "string" || liveTask.worktree === null;
@@ -4200,6 +4207,16 @@ export class TaskExecutor {
                 const implicitCheck = await this.store.getTask(task.id);
                 if (implicitCheck.steps.length > 0 &&
                     implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
+                  // Implicit path has no summary; evaluateTaskDoneRefusal will skip summary-claims-incomplete and only enforce pending-code-review-revise / bulk-step-completion-without-review.
+                  const refusal = evaluateTaskDoneRefusal(implicitCheck, {}, codeReviewVerdicts);
+                  if (!refusal.ok) {
+                    await this.handleImplicitTaskDoneRefusal(implicitCheck, worktreePath, refusal);
+                    retrySession?.dispose();
+                    retrySession = null;
+                    retryAbortedDueToReclaim = false;
+                    refusalHandled = true;
+                    break;
+                  }
                   taskDone = true;
                   executorLog.log(`${task.id} all steps done — treating as implicit fn_task_done`);
                   await this.store.logEntry(task.id, "All steps complete — implicit fn_task_done (agent did not call tool explicitly)", undefined, this.currentRunContext);
@@ -4282,6 +4299,8 @@ export class TaskExecutor {
               await this.persistTokenUsage(task.id);
               await this.store.moveTask(task.id, "todo", { preserveProgress: true });
               executorLog.log(silentMessage);
+            } else if (refusalHandled) {
+              return;
             } else {
               // FN-4806: Genuine "agent finished without calling fn_task_done after N retries"
               // exhaustion. Not a reclaim/self-heal — the agent had a fair chance and failed to
