@@ -209,6 +209,7 @@ export {
   type FilesystemMutationType,
 } from "./run-audit.js";
 export { PrCommentHandler } from "./pr-comment-handler.js";
+export { writeSecretsEnvFile, cleanupSecretsEnvFile, type WriteSecretsEnvFileOptions, type WriteSecretsEnvFileResult, type CleanupSecretsEnvFileOptions, type CleanupSecretsEnvFileResult } from "./secrets-env-writer.js";
 export {
   NtfyNotifier,
   DEFAULT_NTFY_EVENTS,
