@@ -158,11 +158,13 @@ describe("TaskDetailModal create-PR wiring", () => {
     await waitFor(() => expect(screen.getByTestId("task-review-create-pr")).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId("task-review-create-pr"));
-    expect(screen.getByTestId("pr-create-modal-stub")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Definition" }));
+    await waitFor(() => expect(screen.getByTestId("pr-create-modal-stub")).toBeInTheDocument());
     expect(prCreateModalState.latestProps?.taskId).toBe("FN-5021");
     expect(prCreateModalState.latestProps?.projectId).toBe("project-123");
     expect(prCreateModalState.latestProps?.defaultBaseBranch).toBeUndefined();
     expect(taskReviewTabState.latestProps?.prAuthAvailable).toBe(true);
+    expect(taskReviewTabState.latestProps?.autoMergeEnabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Stub close" }));
     expect(screen.queryByTestId("pr-create-modal-stub")).toBeNull();

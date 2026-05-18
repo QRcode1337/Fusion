@@ -2540,6 +2540,7 @@ export function TaskDetailContent({
               projectId={projectId}
               onTaskUpdated={onTaskUpdated}
               prAuthAvailable={prAuthAvailable}
+              autoMergeEnabled={autoMergeEnabled}
               onRequestCreatePr={() => setPrCreateOpen(true)}
             />
           ) : activeTab === "comments" ? (
