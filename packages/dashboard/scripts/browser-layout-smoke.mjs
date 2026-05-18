@@ -67,7 +67,7 @@ function runCommand(command, commandArgs, cwd) {
   });
 }
 
-function createSmokeHtml() {
+export function createSmokeHtml() {
   const columns = [
     ["triage", "Triage", "1"],
     ["todo", "Todo", "2"],
@@ -137,6 +137,15 @@ function createSmokeHtml() {
             <button class="btn-icon" data-smoke="open-modal" type="button" aria-label="Settings">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg>
             </button>
+            <button class="btn-icon" data-smoke="show-pr-create" type="button" aria-label="Show PR create modal fixture">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"></path></svg>
+            </button>
+            <button class="btn-icon" data-smoke="show-pr-panel" type="button" aria-label="Show PR panel fixture">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+            <button class="btn-icon" data-smoke="show-pr-checks" type="button" aria-label="Show PR checks fixture">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="18" cy="12" r="2"></circle></svg>
+            </button>
           </div>
         </header>
       </div>
@@ -204,6 +213,150 @@ function createSmokeHtml() {
           </footer>
         </div>
       </div>
+
+      <section data-smoke="pr-create-modal" hidden>
+        <div class="modal-overlay open" role="dialog" aria-modal="true">
+          <div class="modal modal-lg">
+            <header class="modal-header">
+              <h2>Create Pull Request</h2>
+              <button class="modal-close" type="button" aria-label="Close">&times;</button>
+            </header>
+            <div class="pr-create-modal">
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__preflight">
+                  <div class="pr-create-modal__preflight-row is-ok">
+                    <span class="status-dot status-dot--online" aria-hidden="true"></span>
+                    <div>
+                      <p class="pr-create-modal__preflight-label">Remote branch is available</p>
+                      <p class="pr-create-modal__preflight-message">Ready to open a pull request.</p>
+                    </div>
+                  </div>
+                  <div class="pr-create-modal__preflight-row is-failed">
+                    <span class="status-dot status-dot--error" aria-hidden="true"></span>
+                    <div>
+                      <p class="pr-create-modal__preflight-label">Conflicts detected</p>
+                      <p class="pr-create-modal__preflight-message">Resolve the branch conflicts before continuing.</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__title-row">
+                  <label class="pr-create-modal__label">Title</label>
+                </div>
+                <input class="input" value="feat: add browser smoke fixtures for PR layout surfaces" />
+              </section>
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__title-row">
+                  <label class="pr-create-modal__label">Body</label>
+                </div>
+                <textarea class="input pr-create-modal__body-input" rows="6" placeholder="## Summary&#10;- Adds fixture coverage for PR create modal&#10;- Exercises PR panel checks and review rows&#10;- Verifies checks-list wrapping for long names"></textarea>
+              </section>
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__chips">
+                  <span class="pr-create-modal__chip">@alex</span>
+                  <span class="pr-create-modal__chip">@sam<button type="button" class="btn btn-icon pr-create-modal__chip-remove" aria-label="Remove @sam">&times;</button></span>
+                </div>
+              </section>
+              <section class="pr-create-modal__section pr-create-modal__grid-two">
+                <div>
+                  <label class="pr-create-modal__label">Base branch</label>
+                  <select class="select">
+                    <option>main</option>
+                    <option>release/next</option>
+                  </select>
+                </div>
+                <label class="checkbox-label pr-create-modal__draft">
+                  <input type="checkbox" />
+                  Create as draft
+                </label>
+              </section>
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__option-list">
+                  <button class="btn btn-sm pr-create-modal__option-item" type="button">@reviewer-one</button>
+                  <button class="btn btn-sm pr-create-modal__option-item" type="button">@reviewer-two</button>
+                </div>
+              </section>
+              <section class="pr-create-modal__section">
+                <div class="pr-create-modal__preview">
+                  <div class="pr-create-modal__commit-row"><code>5e42c70</code><span>Add PR sections to smoke fixture</span><span>fusion</span></div>
+                  <div class="pr-create-modal__file-row"><span>packages/dashboard/scripts/browser-layout-smoke.mjs</span><span>+120 / −3</span><span class="card-status-badge card-status-badge--todo">modified</span></div>
+                </div>
+              </section>
+            </div>
+            <footer class="modal-actions">
+              <button class="btn btn-secondary" type="button">Cancel</button>
+              <button class="btn btn-primary" type="button">Create PR</button>
+            </footer>
+          </div>
+        </div>
+      </section>
+
+      <section data-smoke="pr-panel" hidden>
+        <div class="pr-panel-section">
+          <div class="pr-panel-row-label">Checks</div>
+          <div class="pr-panel-checks-rollup pr-panel-tone-success">3 passing, 1 warning, 0 failing</div>
+          <details class="pr-panel-checks-details" open>
+            <summary>Checks details</summary>
+            <div class="pr-panel-check-list">
+              <div class="pr-panel-check-item"><span class="pr-panel-check-dot"></span><span>lint / dashboard</span><span class="pr-panel-check-chip pr-panel-check-chip--success">success</span></div>
+              <div class="pr-panel-check-item"><span class="pr-panel-check-dot"></span><span>typecheck / dashboard</span><span class="pr-panel-check-chip pr-panel-check-chip--error">failed</span></div>
+              <div class="pr-panel-check-item"><span class="pr-panel-check-dot"></span><span>browser-smoke / dashboard</span><span class="pr-panel-check-chip pr-panel-check-chip--warning">pending</span></div>
+            </div>
+          </details>
+        </div>
+        <div class="pr-panel-review-thread">
+          <div class="pr-panel-review-thread-header">
+            <strong>@reviewer</strong>
+            <span class="pr-panel-review-badge pr-panel-review-badge--error">CHANGES_REQUESTED</span>
+          </div>
+          <a class="pr-panel-review-item" href="#">Please update the smoke fixture to include PR checks and review threads for mobile overflow coverage.<span class="pr-panel-comment-time">Last: just now</span></a>
+          <a class="pr-panel-review-item" href="#">Long review comment to ensure wrapping behavior stays contained on mobile widths and does not produce horizontal overflow in this smoke fixture section.<span class="pr-panel-comment-time">Last: 2m ago</span></a>
+        </div>
+      </section>
+
+      <section data-smoke="pr-checks" hidden>
+        <section class="pr-checks" aria-live="polite">
+          <div class="pr-checks__header">
+            <div class="pr-checks__summary">7 passing, 1 failing, 1 pending</div>
+            <div class="pr-checks__header-actions">
+              <button class="btn btn-icon" type="button" aria-label="Refresh checks">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg>
+              </button>
+              <span class="pr-checks__updated">updated 12s ago</span>
+            </div>
+          </div>
+          <div class="pr-checks__error">One required check is failing and must be addressed before merge.</div>
+          <div class="pr-checks__list" role="list">
+            <div class="pr-checks__item" role="listitem">
+              <span class="pr-checks__icon">●</span>
+              <div class="pr-checks__name-wrap">
+                <span class="pr-checks__name">ci / lint / dashboard / browser-smoke (ubuntu-latest)</span>
+                <span class="pr-checks__required">Required</span>
+                <span class="pr-checks__duration">04:26</span>
+              </div>
+              <a class="pr-checks__details-link" href="#">View details</a>
+            </div>
+            <div class="pr-checks__item" role="listitem">
+              <span class="pr-checks__icon">●</span>
+              <div class="pr-checks__name-wrap">
+                <span class="pr-checks__name">ci / test / dashboard app quality matrix with long descriptive suffix</span>
+                <span class="pr-checks__required">Required</span>
+                <span class="pr-checks__duration">09:18</span>
+              </div>
+              <a class="pr-checks__details-link" href="#">View details</a>
+            </div>
+            <div class="pr-checks__item" role="listitem">
+              <span class="pr-checks__icon">●</span>
+              <div class="pr-checks__name-wrap">
+                <span class="pr-checks__name">ci / typecheck / workspace / dashboard</span>
+                <span class="pr-checks__duration">01:54</span>
+              </div>
+              <a class="pr-checks__details-link" href="#">View details</a>
+            </div>
+          </div>
+        </section>
+      </section>
     </div>
     <script>
       const board = document.querySelector('[data-smoke="board"]');
@@ -212,6 +365,9 @@ function createSmokeHtml() {
       const listButton = document.querySelector('[data-smoke="show-list"]');
       const modalOverlay = document.querySelector('[data-smoke="modal-overlay"]');
       const nav = document.querySelector('.mobile-nav-bar');
+      const prCreate = document.querySelector('[data-smoke="pr-create-modal"]');
+      const prPanel = document.querySelector('[data-smoke="pr-panel"]');
+      const prChecks = document.querySelector('[data-smoke="pr-checks"]');
 
       function setView(view) {
         const isList = view === 'list';
@@ -221,8 +377,17 @@ function createSmokeHtml() {
         listButton.classList.toggle('active', isList);
       }
 
+      function showSmokeSection(name) {
+        prCreate.hidden = name !== 'pr-create-modal';
+        prPanel.hidden = name !== 'pr-panel';
+        prChecks.hidden = name !== 'pr-checks';
+      }
+
       boardButton.addEventListener('click', () => setView('board'));
       listButton.addEventListener('click', () => setView('list'));
+      document.querySelector('[data-smoke="show-pr-create"]').addEventListener('click', () => showSmokeSection('pr-create-modal'));
+      document.querySelector('[data-smoke="show-pr-panel"]').addEventListener('click', () => showSmokeSection('pr-panel'));
+      document.querySelector('[data-smoke="show-pr-checks"]').addEventListener('click', () => showSmokeSection('pr-checks'));
       document.querySelector('[data-smoke="open-modal"]').addEventListener('click', () => {
         modalOverlay.classList.add('open');
         nav.hidden = true;
@@ -612,6 +777,88 @@ async function runSmokeChecks(page, pageUrl) {
       && modalLayout.navHidden === true
       && modalLayout.documentOverflow <= 1,
     JSON.stringify(modalLayout),
+  );
+
+  const prCreateModalLayout = await evaluate(page, `(() => {
+    document.querySelector('[data-smoke="show-pr-create"]').click();
+    const modal = document.querySelector('[data-smoke="pr-create-modal"] .modal.modal-lg');
+    const failedRow = document.querySelector('.pr-create-modal__preflight-row.is-failed');
+    const textarea = document.querySelector('.pr-create-modal__body-input');
+    const chips = [...document.querySelectorAll('.pr-create-modal__chip')].map((chip) => chip.getBoundingClientRect().right);
+    const preview = document.querySelector('.pr-create-modal__preview');
+    return {
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      modalWidth: Math.round(modal.getBoundingClientRect().width),
+      failedRowBoxShadow: getComputedStyle(failedRow).boxShadow,
+      textareaOverflow: textarea.scrollWidth - textarea.clientWidth,
+      chipRights: chips,
+      previewOverflow: preview.scrollWidth - preview.clientWidth,
+    };
+  })()`);
+
+  assertSmokeResult(
+    "pr-create-modal layout",
+    prCreateModalLayout.documentOverflow <= 1
+      && prCreateModalLayout.modalWidth === 390
+      && prCreateModalLayout.failedRowBoxShadow !== "none"
+      && prCreateModalLayout.textareaOverflow <= 1
+      && prCreateModalLayout.chipRights.every((right) => right <= 390)
+      && prCreateModalLayout.previewOverflow <= 1,
+    JSON.stringify(prCreateModalLayout),
+  );
+
+  const prPanelLayout = await evaluate(page, `(() => {
+    document.querySelector('[data-smoke="show-pr-panel"]').click();
+    const panel = document.querySelector('[data-smoke="pr-panel"] .pr-panel-section');
+    const checkRights = [...document.querySelectorAll('[data-smoke="pr-panel"] .pr-panel-check-item')]
+      .map((row) => row.getBoundingClientRect().right);
+    const reviewItemOverflows = [...document.querySelectorAll('[data-smoke="pr-panel"] .pr-panel-review-item')]
+      .map((row) => row.scrollWidth - row.clientWidth);
+    return {
+      panelOverflow: panel.scrollWidth - panel.clientWidth,
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      checkRights,
+      successColor: getComputedStyle(document.querySelector('[data-smoke="pr-panel"] .pr-panel-check-chip--success')).color,
+      errorColor: getComputedStyle(document.querySelector('[data-smoke="pr-panel"] .pr-panel-check-chip--error')).color,
+      reviewItemOverflows,
+    };
+  })()`);
+
+  assertSmokeResult(
+    "pr-panel layout",
+    prPanelLayout.panelOverflow <= 1
+      && prPanelLayout.documentOverflow <= 1
+      && prPanelLayout.checkRights.every((right) => right <= 390)
+      && prPanelLayout.successColor !== prPanelLayout.errorColor
+      && prPanelLayout.reviewItemOverflows.every((overflow) => overflow <= 1),
+    JSON.stringify(prPanelLayout),
+  );
+
+  const prChecksLayout = await evaluate(page, `(() => {
+    document.querySelector('[data-smoke="show-pr-checks"]').click();
+    const list = document.querySelector('[data-smoke="pr-checks"] .pr-checks__list');
+    const items = [...document.querySelectorAll('[data-smoke="pr-checks"] .pr-checks__item')];
+    const names = [...document.querySelectorAll('[data-smoke="pr-checks"] .pr-checks__name')];
+    const detailsLink = document.querySelector('[data-smoke="pr-checks"] .pr-checks__details-link');
+    return {
+      listOverflow: list.scrollWidth - list.clientWidth,
+      itemRights: items.map((item) => item.getBoundingClientRect().right),
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      nameHeights: names.map((name) => name.offsetHeight),
+      detailsLinkVisible: detailsLink.offsetHeight > 0,
+      detailsLinkColor: getComputedStyle(detailsLink).color,
+    };
+  })()`);
+
+  assertSmokeResult(
+    "pr-checks layout",
+    prChecksLayout.listOverflow <= 1
+      && prChecksLayout.itemRights.every((right) => right <= 390)
+      && prChecksLayout.documentOverflow <= 1
+      && prChecksLayout.nameHeights.every((height) => height > 0)
+      && prChecksLayout.detailsLinkVisible === true
+      && prChecksLayout.detailsLinkColor !== "rgb(255, 255, 255)",
+    JSON.stringify(prChecksLayout),
   );
 }
 

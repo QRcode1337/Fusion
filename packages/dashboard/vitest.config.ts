@@ -8,6 +8,7 @@ const maxWorkers = computeMaxWorkers({ defaultCap: 3 });
 const qualityAppTests = [
   // Top-level API-client, mobile layout, styling, auth, and shell regressions.
   "app/__tests__/*.test.{ts,tsx}",
+  "app/__tests__/browser-layout-smoke-fixture.test.ts",
   "app/api/**/*.test.ts",
   // Representative workflow/component coverage. Exhaustive modal/view suites
   // stay available in the full `dashboard-app` project.
