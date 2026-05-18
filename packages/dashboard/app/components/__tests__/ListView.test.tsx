@@ -28,8 +28,9 @@ vi.mock("../../api", () => ({
 import { fetchTaskDetail, batchUpdateTaskModels, fetchNodes } from "../../api";
 
 const mockConfirm = vi.fn();
+const mockConfirmWithChoice = vi.fn();
 vi.mock("../../hooks/useConfirm", () => ({
-  useConfirm: () => ({ confirm: mockConfirm }),
+  useConfirm: () => ({ confirm: mockConfirm, confirmWithChoice: mockConfirmWithChoice }),
 }));
 
 const mockAddToast = vi.fn();
@@ -178,6 +179,7 @@ describe("ListView", () => {
       prompt: "# Detail",
     } as TaskDetail);
     mockConfirm.mockReset();
+    mockConfirmWithChoice.mockReset();
     localStorage.clear();
     ensureMatchMedia();
     vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
@@ -2754,6 +2756,33 @@ describe("ListView - Bulk Selection", () => {
   });
 
   describe("bulk delete", () => {
+    it("archives done tasks and deletes non-done tasks when tertiary action chosen", async () => {
+      const user = userEvent.setup();
+      const tasks = [
+        createMockTask({ id: "FN-001", column: "done" }),
+        createMockTask({ id: "FN-002", column: "done" }),
+        createMockTask({ id: "FN-003", column: "todo" }),
+      ];
+      const onDeleteTask = vi.fn(async () => createMockTask());
+      const onArchiveTask = vi.fn(async () => createMockTask());
+      mockConfirmWithChoice.mockResolvedValueOnce("tertiary");
+
+      renderListView({ tasks, onDeleteTask, onArchiveTask });
+      enterBulkEditMode();
+      await user.click(screen.getByLabelText("Select FN-001"));
+      await user.click(screen.getByLabelText("Select FN-002"));
+      await user.click(screen.getByLabelText("Select FN-003"));
+      await user.click(screen.getByRole("button", { name: /delete selected/i }));
+
+      await waitFor(() => {
+        expect(onArchiveTask).toHaveBeenCalledTimes(2);
+        expect(onArchiveTask).toHaveBeenCalledWith("FN-001");
+        expect(onArchiveTask).toHaveBeenCalledWith("FN-002");
+        expect(onDeleteTask).toHaveBeenCalledTimes(1);
+        expect(onDeleteTask).toHaveBeenCalledWith("FN-003");
+      });
+    });
+
     it("deletes selected tasks and clears selection on success", async () => {
       const user = userEvent.setup();
       const tasks = [createMockTask({ id: "FN-001" }), createMockTask({ id: "FN-002" })];

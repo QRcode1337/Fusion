@@ -278,7 +278,7 @@ export function ListView({
   const [selectedColumn, setSelectedColumn] = useState<Column | null>(null);
   const viewportMode = useViewportMode();
   const isMobile = viewportMode === "mobile";
-  const { confirm } = useConfirm();
+  const { confirm, confirmWithChoice } = useConfirm();
 
   // Column visibility state - initialize from localStorage or reduced default columns
   const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => readVisibleColumns(projectId));
@@ -700,23 +700,58 @@ export function ListView({
       return;
     }
 
-    const confirmed = await confirm({
-      title: "Delete Selected Tasks",
-      message: `Delete ${deletableTasks.length} selected task${deletableTasks.length === 1 ? "" : "s"}?`,
-      confirmLabel: "Delete",
-      cancelLabel: "Cancel",
-      danger: true,
-    });
+    const doneTasks = deletableTasks.filter((task) => task.column === "done");
+    const otherTasks = deletableTasks.filter((task) => task.column !== "done");
 
-    if (!confirmed) return;
+    let shouldDeleteAll = false;
+    let shouldArchiveDoneInstead = false;
+
+    if (doneTasks.length > 0 && onArchiveTask) {
+      const choice = await confirmWithChoice({
+        title: "Delete Selected Tasks",
+        message: `Delete ${deletableTasks.length} task${deletableTasks.length === 1 ? "" : "s"}, or archive the ${doneTasks.length} done task${doneTasks.length === 1 ? "" : "s"} and delete the rest?`,
+        confirmLabel: "Delete All",
+        cancelLabel: "Cancel",
+        tertiaryLabel: `Archive ${doneTasks.length} Done`,
+        danger: true,
+      });
+      if (choice === "cancel") return;
+      shouldDeleteAll = choice === "primary";
+      shouldArchiveDoneInstead = choice === "tertiary";
+    } else {
+      const confirmed = await confirm({
+        title: "Delete Selected Tasks",
+        message: `Delete ${deletableTasks.length} selected task${deletableTasks.length === 1 ? "" : "s"}?`,
+        confirmLabel: "Delete",
+        cancelLabel: "Cancel",
+        danger: true,
+      });
+
+      if (!confirmed) return;
+      shouldDeleteAll = true;
+    }
 
     setIsApplying(true);
     const deletedIds: string[] = [];
+    const archivedIds: string[] = [];
     const failedIds: string[] = [];
     const skippedIds = archivedTasks.map((task) => task.id);
 
     try {
-      for (const task of deletableTasks) {
+      const tasksToDelete = shouldDeleteAll ? deletableTasks : otherTasks;
+
+      if (shouldArchiveDoneInstead && onArchiveTask) {
+        for (const task of doneTasks) {
+          try {
+            await onArchiveTask(task.id);
+            archivedIds.push(task.id);
+          } catch {
+            failedIds.push(task.id);
+          }
+        }
+      }
+
+      for (const task of tasksToDelete) {
         try {
           await onDeleteTask(task.id);
           deletedIds.push(task.id);
@@ -752,21 +787,25 @@ export function ListView({
       setIsApplying(false);
     }
 
-    if (deletedIds.length > 0) {
+    if (deletedIds.length > 0 || archivedIds.length > 0) {
       setSelectedTaskIds((previous) => {
         const next = new Set(previous);
         for (const id of deletedIds) {
+          next.delete(id);
+        }
+        for (const id of archivedIds) {
           next.delete(id);
         }
         return next;
       });
     }
 
-    addToast(
-      `Deleted ${deletedIds.length} task${deletedIds.length === 1 ? "" : "s"} · ${skippedIds.length} archived skipped · ${failedIds.length} failed`,
-      failedIds.length > 0 ? "error" : "success",
-    );
-  }, [addToast, confirm, onDeleteTask, selectedTaskIds, tasks]);
+    const summaryMessage = shouldArchiveDoneInstead
+      ? `Archived ${archivedIds.length}, deleted ${deletedIds.length}, failed ${failedIds.length}`
+      : `Deleted ${deletedIds.length} task${deletedIds.length === 1 ? "" : "s"} · ${skippedIds.length} archived skipped · ${failedIds.length} failed`;
+
+    addToast(summaryMessage, failedIds.length > 0 ? "error" : "success");
+  }, [addToast, confirm, confirmWithChoice, onArchiveTask, onDeleteTask, selectedTaskIds, tasks]);
 
   const handleBulkPause = useCallback(async () => {
     if (selectedTaskIds.size === 0) return;
