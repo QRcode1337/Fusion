@@ -173,7 +173,8 @@ describe("computeSplitPlan", () => {
       { name: "@fusion/dashboard", weight: 169, shardIndex: 1, shardCount: 3 },
       { name: "@fusion/dashboard", weight: 169, shardIndex: 2, shardCount: 3 },
       { name: "@fusion/dashboard", weight: 169, shardIndex: 3, shardCount: 3 },
-      { name: "@fusion/core", weight: 60 },
+      { name: "@fusion/core", weight: 30, shardIndex: 1, shardCount: 2 },
+      { name: "@fusion/core", weight: 30, shardIndex: 2, shardCount: 2 },
     ]);
   });
 });
