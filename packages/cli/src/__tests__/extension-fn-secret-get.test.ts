@@ -113,9 +113,28 @@ describe("extension fn_secret_get", () => {
     const denied = await tool.execute("id", { key: "API_KEY" }, undefined, undefined, { cwd: process.cwd(), agentId: "agent-1", runId: "run-1" });
     expect(denied.details.error).toBe("denied");
     expect(revealSecretMock).not.toHaveBeenCalled();
+    expect(approvalCreateMock).not.toHaveBeenCalled();
 
     listSecretsMock.mockReturnValue([]);
     const missing = await tool.execute("id", { key: "NOPE" }, undefined, undefined, { cwd: process.cwd(), agentId: "agent-1" });
     expect(missing.details.error).toBe("not-found");
+  });
+
+  it("uses explicit scope when provided, otherwise falls back project then global", async () => {
+    listSecretsMock.mockImplementation((scope?: "project" | "global") => {
+      if (scope === "project") return [{ id: "p1", key: "SHARED", accessPolicy: "auto" }];
+      if (scope === "global") return [{ id: "g1", key: "SHARED", accessPolicy: "auto" }];
+      return [];
+    });
+
+    const tools = new Map<string, any>();
+    kbExtension({ registerTool: (d: any) => tools.set(d.name, d), registerCommand: vi.fn(), registerShortcut: vi.fn(), registerFlag: vi.fn(), on: vi.fn() } as any);
+    const tool = tools.get("fn_secret_get");
+
+    await tool.execute("id", { key: "SHARED", scope: "global" }, undefined, undefined, { cwd: process.cwd(), agentId: "agent-1" });
+    expect(revealSecretMock).toHaveBeenLastCalledWith("g1", "global", { agentId: "agent-1" });
+
+    await tool.execute("id", { key: "SHARED" }, undefined, undefined, { cwd: process.cwd(), agentId: "agent-1" });
+    expect(revealSecretMock).toHaveBeenLastCalledWith("p1", "project", { agentId: "agent-1" });
   });
 });
