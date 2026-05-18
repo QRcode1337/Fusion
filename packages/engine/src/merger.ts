@@ -2565,43 +2565,65 @@ async function tryRecoverHardFailApply(params: {
 
   // 3-way produced conflict markers → existing AI conflict resolver handles it.
   if (threeWayConflicted.length > 0) {
+    const task = await ctx.store.getTask(taskId);
+    const partitioned = await applyLayer3ConflictScopePartition({
+      store: ctx.store,
+      task,
+      taskId,
+      rootDir,
+      branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+      conflictFiles: threeWayConflicted,
+      auditor: ctx.options.auditor,
+    });
+    const aiConflictedFiles = partitioned.inScopeConflicts;
+
     if (!smartConflictResolution) {
-      const message = `Autostash 3-way produced conflict markers in ${threeWayConflicted.length} file(s) and smartConflictResolution is disabled. Stash ${sha.slice(0, 7)} left intact.`;
+      const message = `Autostash 3-way produced conflict markers in ${aiConflictedFiles.length} file(s) and smartConflictResolution is disabled. Stash ${sha.slice(0, 7)} left intact.`;
       await ctx.store.logEntry(
         taskId,
         `Autostash 3-way left conflict markers — manual resolution required (smart resolution disabled)`,
         message,
       ).catch(() => undefined);
-      return { status: "conflict-needs-manual", stashSha: sha, conflictedFiles: threeWayConflicted, message };
+      return { status: "conflict-needs-manual", stashSha: sha, conflictedFiles: aiConflictedFiles, message };
+    }
+
+    if (aiConflictedFiles.length === 0) {
+      const dropResult = await dropAutostashBySha(rootDir, taskId, sha);
+      await ctx.store.logEntry(
+        taskId,
+        "Autostash hard-fail recovered via 3-way scope partition (no in-scope conflicts remained)",
+        `${dropResult.dropped ? "" : `Stash drop failed (${dropResult.reason ?? "unknown"}); clean up manually.`}`,
+      ).catch(() => undefined);
+      return { status: "ai-resolved", stashSha: sha, conflictedFiles: [] };
     }
 
     await ctx.store.logEntry(
       taskId,
-      `Autostash 3-way left conflicts in ${threeWayConflicted.length} file(s) — invoking AI to resolve`,
-      threeWayConflicted.join("\n"),
+      `Autostash 3-way left conflicts in ${aiConflictedFiles.length} file(s) — invoking AI to resolve`,
+      aiConflictedFiles.join("\n"),
     ).catch(() => undefined);
 
     const aiResult = await runAiAgentForAutostashConflict({
       store: ctx.store,
       rootDir,
       taskId,
-      conflictedFiles: threeWayConflicted,
+      conflictedFiles: aiConflictedFiles,
       options: ctx.options,
       settings: ctx.settings,
     });
 
     const stillConflicted = aiResult.success
-      ? await findFilesWithConflictMarkers(rootDir, threeWayConflicted)
-      : threeWayConflicted;
+      ? await findFilesWithConflictMarkers(rootDir, aiConflictedFiles)
+      : aiConflictedFiles;
 
     if (aiResult.success && stillConflicted.length === 0) {
       const dropResult = await dropAutostashBySha(rootDir, taskId, sha);
       await ctx.store.logEntry(
         taskId,
-        `Autostash hard-fail recovered via 3-way + AI conflict resolution (${threeWayConflicted.length} file(s))`,
-        `Resolved files:\n${threeWayConflicted.join("\n")}${dropResult.dropped ? "" : `\n\nStash drop failed (${dropResult.reason ?? "unknown"}); clean up manually.`}`,
+        `Autostash hard-fail recovered via 3-way + AI conflict resolution (${aiConflictedFiles.length} file(s))`,
+        `Resolved files:\n${aiConflictedFiles.join("\n")}${dropResult.dropped ? "" : `\n\nStash drop failed (${dropResult.reason ?? "unknown"}); clean up manually.`}`,
       ).catch(() => undefined);
-      return { status: "ai-resolved", stashSha: sha, conflictedFiles: threeWayConflicted };
+      return { status: "ai-resolved", stashSha: sha, conflictedFiles: aiConflictedFiles };
     }
 
     const failureMsg = `3-way+AI resolution incomplete; markers remain in ${stillConflicted.join(", ") || "(unknown)"}. Stash ${sha.slice(0, 7)} left intact.`;
@@ -2972,38 +2994,62 @@ async function restoreUnrelatedRootDirChanges(
 
   // Conflict path: try AI resolution if enabled.
   const conflictedFiles = await getConflictedFiles(rootDir);
+  const task = await ctx.store.getTask(taskId);
+  const partitioned = await applyLayer3ConflictScopePartition({
+    store: ctx.store,
+    task,
+    taskId,
+    rootDir,
+    branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+    conflictFiles: conflictedFiles,
+    auditor: ctx.options.auditor,
+  });
+  const aiConflictedFiles = partitioned.inScopeConflicts;
+
   const smartConflictResolution =
     (ctx.settings.smartConflictResolution ?? ctx.settings.autoResolveConflicts) !== false;
 
   if (!smartConflictResolution) {
-    const message = `Autostash apply conflicted in ${conflictedFiles.length} file(s) and smartConflictResolution is disabled. Stash ${sha.slice(0, 7)} left intact; resolve manually with: cd ${rootDir} && # edit files, then git stash drop <ref>`;
+    const message = `Autostash apply conflicted in ${aiConflictedFiles.length} file(s) and smartConflictResolution is disabled. Stash ${sha.slice(0, 7)} left intact; resolve manually with: cd ${rootDir} && # edit files, then git stash drop <ref>`;
     mergerLog.warn(`${taskId}: ${message}`);
     await ctx.store
       .logEntry(
         taskId,
-        `Autostash apply conflicted in ${conflictedFiles.length} file(s) — manual resolution required (smart resolution disabled)`,
+        `Autostash apply conflicted in ${aiConflictedFiles.length} file(s) — manual resolution required (smart resolution disabled)`,
         message,
       )
       .catch(() => undefined);
     return {
       status: "conflict-needs-manual",
       stashSha: sha,
-      conflictedFiles,
+      conflictedFiles: aiConflictedFiles,
       message,
+    };
+  }
+
+  if (aiConflictedFiles.length === 0) {
+    const aiDropResult = await dropAutostashBySha(rootDir, taskId, sha);
+    if (aiDropResult.dropped) {
+      await ctx.store.logEntry(taskId, "Autostash conflict resolved by Layer 3 scope partition (no in-scope conflicts remained)");
+    }
+    return {
+      status: "ai-resolved",
+      stashSha: sha,
+      conflictedFiles: [],
     };
   }
 
   await ctx.store.logEntry(
     taskId,
-    `Autostash apply conflicted in ${conflictedFiles.length} file(s) — invoking AI to resolve`,
-    conflictedFiles.join("\n"),
+    `Autostash apply conflicted in ${aiConflictedFiles.length} file(s) — invoking AI to resolve`,
+    aiConflictedFiles.join("\n"),
   );
 
   const aiResult = await runAiAgentForAutostashConflict({
     store: ctx.store,
     rootDir,
     taskId,
-    conflictedFiles,
+    conflictedFiles: aiConflictedFiles,
     options: ctx.options,
     settings: ctx.settings,
   });
@@ -3017,13 +3063,13 @@ async function restoreUnrelatedRootDirChanges(
     return {
       status: "conflict-needs-manual",
       stashSha: sha,
-      conflictedFiles,
+      conflictedFiles: aiConflictedFiles,
       message,
     };
   }
 
   // Verify the agent actually removed all conflict markers.
-  const stillConflicted = await findFilesWithConflictMarkers(rootDir, conflictedFiles);
+  const stillConflicted = await findFilesWithConflictMarkers(rootDir, aiConflictedFiles);
   if (stillConflicted.length > 0) {
     const message = `AI agent reported success but conflict markers remain in: ${stillConflicted.join(", ")}. Stash ${sha.slice(0, 7)} left intact; recover manually.`;
     mergerLog.warn(`${taskId}: ${message}`);
@@ -3041,27 +3087,27 @@ async function restoreUnrelatedRootDirChanges(
   // Success — AI resolved the conflict. Drop the stash since its content
   // has been applied (with conflict resolution edits on top).
   mergerLog.log(
-    `${taskId}: AI-resolved autostash conflict in ${conflictedFiles.length} file(s); dropping stash ${sha.slice(0, 7)}`,
+    `${taskId}: AI-resolved autostash conflict in ${aiConflictedFiles.length} file(s); dropping stash ${sha.slice(0, 7)}`,
   );
   const aiDropResult = await dropAutostashBySha(rootDir, taskId, sha);
   if (aiDropResult.dropped) {
     await ctx.store.logEntry(
       taskId,
-      `Autostash conflict resolved by AI in ${conflictedFiles.length} file(s)`,
-      conflictedFiles.join("\n"),
+      `Autostash conflict resolved by AI in ${aiConflictedFiles.length} file(s)`,
+      aiConflictedFiles.join("\n"),
     );
   } else {
     await ctx.store.logEntry(
       taskId,
-      `Autostash conflict resolved by AI in ${conflictedFiles.length} file(s), but stash entry failed to drop`,
-      `Resolved files:\n${conflictedFiles.join("\n")}\n\nDrop failure: ${aiDropResult.reason ?? "unknown"}\n\nClean up manually with:\n  cd ${rootDir} && git stash list | grep ${sha.slice(0, 7)} && git stash drop <ref>`,
+      `Autostash conflict resolved by AI in ${aiConflictedFiles.length} file(s), but stash entry failed to drop`,
+      `Resolved files:\n${aiConflictedFiles.join("\n")}\n\nDrop failure: ${aiDropResult.reason ?? "unknown"}\n\nClean up manually with:\n  cd ${rootDir} && git stash list | grep ${sha.slice(0, 7)} && git stash drop <ref>`,
     );
   }
 
   return {
     status: "ai-resolved",
     stashSha: sha,
-    conflictedFiles,
+    conflictedFiles: aiConflictedFiles,
   };
 }
 
@@ -3946,6 +3992,84 @@ export function partitionConflictsByFileScope(params: {
     }
   }
   return { inScope, outOfScope };
+}
+
+export async function applyLayer3ConflictScopePartition(params: {
+  store: TaskStore;
+  task: Task;
+  taskId: string;
+  rootDir: string;
+  branch: string;
+  conflictFiles: string[];
+  auditor?: RunAuditor;
+}): Promise<{ inScopeConflicts: string[]; skippedFiles: string[]; declaredScope: string[]; viaScopeOverride: boolean }> {
+  const { store, task, taskId, rootDir, branch, conflictFiles, auditor } = params;
+  if (conflictFiles.length === 0 || typeof (store as Partial<TaskStore>).parseFileScopeFromPrompt !== "function") {
+    return { inScopeConflicts: conflictFiles, skippedFiles: [], declaredScope: [], viaScopeOverride: false };
+  }
+
+  const declaredScope = await store.parseFileScopeFromPrompt(taskId);
+  if (task.scopeOverride === true) {
+    const reasonSuffix = task.scopeOverrideReason?.trim() ? ` — reason: ${task.scopeOverrideReason.trim()}` : "";
+    await store.appendAgentLog(taskId, `Layer 3 arbiter scope partition bypassed via scopeOverride${reasonSuffix}`, "text", undefined, "merger");
+    if (auditor) {
+      await auditor.git({
+        type: "merge:layer3:scope-override-bypass",
+        target: branch,
+        metadata: {
+          taskId,
+          skippedFiles: [],
+          declaredScope,
+          inScopeCount: conflictFiles.length,
+          viaScopeOverride: true,
+        },
+      }).catch((error: unknown) => {
+        mergerLog.warn(`${taskId}: failed to emit merge:layer3:scope-override-bypass run_audit event: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+    return { inScopeConflicts: conflictFiles, skippedFiles: [], declaredScope, viaScopeOverride: true };
+  }
+
+  if (declaredScope.length === 0) {
+    return { inScopeConflicts: conflictFiles, skippedFiles: [], declaredScope, viaScopeOverride: false };
+  }
+
+  const { inScope, outOfScope } = partitionConflictsByFileScope({ conflictFiles, declaredScope });
+  for (const file of outOfScope) {
+    // In merge and rebase conflict contexts, `--ours` resolves to the
+    // integration-target side (main bytes), which we keep for out-of-scope files.
+    await resolveWithOurs(file, rootDir);
+  }
+
+  const { stdout: stagedOut } = await execAsync("git diff --cached --name-only", { cwd: rootDir, encoding: "utf-8" });
+  const stagedAfterPartition = stagedOut.split("\n").map((line) => line.trim()).filter(Boolean);
+  const outOfScopeStillStaged = stagedAfterPartition.filter((file) => outOfScope.includes(file));
+  if (outOfScopeStillStaged.length > 0) {
+    throw new Error(`Layer 3 scope partition failed for ${taskId}: out-of-scope files still staged after prefer-main resolution: ${outOfScopeStillStaged.join(", ")}`);
+  }
+
+  if (outOfScope.length > 0) {
+    const summary = `Layer 3 arbiter: skipped ${outOfScope.length} foreign file(s) — took main's version for: ${outOfScope.join(", ")}`;
+    await store.appendAgentLog(taskId, summary, "text", undefined, "merger");
+    await store.logEntry(taskId, summary, undefined, "Layer3AIArbiterScopeSkip");
+    if (auditor) {
+      await auditor.git({
+        type: "merge:layer3:foreign-file-skipped",
+        target: branch,
+        metadata: {
+          taskId,
+          skippedFiles: outOfScope,
+          declaredScope,
+          inScopeCount: inScope.length,
+          viaScopeOverride: false,
+        },
+      }).catch((error: unknown) => {
+        mergerLog.warn(`${taskId}: failed to emit merge:layer3:foreign-file-skipped run_audit event: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+  }
+
+  return { inScopeConflicts: inScope, skippedFiles: outOfScope, declaredScope, viaScopeOverride: false };
 }
 
 /**
@@ -8260,9 +8384,20 @@ export async function executeMergeAttempt(
       }
       const mergeExitedWithConflicts = mergeError !== undefined;
       if (conflictedFiles.length > 0 || mergeExitedWithConflicts) {
-        // Classify each conflicted file
+        const task = await store.getTask(taskId);
+        const partitioned = await applyLayer3ConflictScopePartition({
+          store,
+          task,
+          taskId,
+          rootDir,
+          branch,
+          conflictFiles: conflictedFiles,
+          auditor: params.auditor,
+        });
+
+        // Classify each conflicted file remaining in scope.
         const classified: { file: string; type: ConflictType }[] = [];
-        for (const file of conflictedFiles) {
+        for (const file of partitioned.inScopeConflicts) {
           const type = await classifyConflict(file, rootDir);
           classified.push({ file, type });
         }
@@ -8438,11 +8573,21 @@ export async function executeMergeAttempt(
       }
 
       // Check for conflicts
-      const conflictedOutput = execSyncText("git diff --name-only --diff-filter=U", {
-        cwd: rootDir,
-        encoding: "utf-8",
-      }).trim();
-      hasConflicts = conflictedOutput.length > 0;
+      const conflictedFiles = await getConflictedFiles(rootDir);
+      hasConflicts = conflictedFiles.length > 0;
+      if (hasConflicts) {
+        const task = await store.getTask(taskId);
+        const partitioned = await applyLayer3ConflictScopePartition({
+          store,
+          task,
+          taskId,
+          rootDir,
+          branch,
+          conflictFiles: conflictedFiles,
+          auditor: params.auditor,
+        });
+        hasConflicts = partitioned.inScopeConflicts.length > 0;
+      }
 
       if (hasConflicts && !smartConflictResolution) {
         // No auto-resolve - AI will handle all conflicts
