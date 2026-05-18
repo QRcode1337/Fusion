@@ -138,6 +138,7 @@ export type GitMutationType =
   | "merge:audit-failure"
   | "branch:auto-reclaim"
   | "branch:stale-active-reclaim"
+  | "branch:stale-active-reclaim-deferred"
   | "branch:orphan-prune"
   | "branch:orphan-rescued"
   | "branch:reanchor"

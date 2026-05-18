@@ -50,6 +50,7 @@ const log = createLogger("self-healing");
 const worktreeMetadataReconcileLog = createLogger("worktree-metadata-reconcile");
 const execAsync = promisify(exec);
 const DONE_TASK_INTEGRITY_SWEEP_LIMIT = 50;
+export const STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS = 10 * 60_000;
 
 async function classifyOwnedLandedEvidenceForSelfHealing(rootDir: string, task: Task, mergeTargetBranch: string): Promise<OwnedLandedClassification> {
   const { classifyOwnedLandedEvidence } = await import("./merger.js");
@@ -2007,6 +2008,64 @@ export class SelfHealingManager {
           continue;
         }
         if (activeTaskIds.has(task.id.toUpperCase())) continue;
+
+        const emitDeferredReclaimAudit = async (reason: "active-session" | "recent-execution-started" | "worktree-has-uncommitted-changes", hasActiveSession: boolean, hasUncommittedChanges: boolean): Promise<void> => {
+          log.log(`[self-healing] deferring stale-active-branch reclaim for ${task.id}: reason=${reason}`);
+          try {
+            const auditor = createRunAuditor(this.store, {
+              runId: generateSyntheticRunId("self-heal", task.id),
+              agentId: "self-healing",
+              taskId: task.id,
+              taskLineageId: task.lineageId,
+              phase: "reclaim-stale-active-branches",
+            });
+            await auditor.git({
+              type: "branch:stale-active-reclaim-deferred",
+              target: branch,
+              metadata: {
+                taskId: task.id,
+                branch,
+                reason,
+                executionStartedAt: task.executionStartedAt ?? null,
+                hasActiveSession,
+                hasUncommittedChanges,
+              },
+            });
+          } catch (auditErr: unknown) {
+            log.warn(`Failed to write branch:stale-active-reclaim-deferred run-audit event for ${task.id}: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`);
+          }
+        };
+
+        const hasActiveSession = Boolean(task.worktree && activeSessionRegistry.isPathActive(task.worktree));
+        if (hasActiveSession) {
+          await emitDeferredReclaimAudit("active-session", true, false);
+          continue;
+        }
+
+        const executionStartedAtMs = task.executionStartedAt ? Date.parse(task.executionStartedAt) : Number.NaN;
+        const isRecentlyStarted = Number.isFinite(executionStartedAtMs) && Date.now() - executionStartedAtMs <= STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS;
+        if (isRecentlyStarted) {
+          await emitDeferredReclaimAudit("recent-execution-started", false, false);
+          continue;
+        }
+
+        if (task.worktree && existsSync(task.worktree)) {
+          try {
+            if (statSync(task.worktree).isDirectory()) {
+              const { stdout } = await execAsync(`git -C ${JSON.stringify(task.worktree)} status --porcelain`, {
+                cwd: this.options.rootDir,
+                timeout: 30_000,
+                maxBuffer: 10 * 1024 * 1024,
+              });
+              if ((stdout ?? "").trim().length > 0) {
+                await emitDeferredReclaimAudit("worktree-has-uncommitted-changes", false, true);
+                continue;
+              }
+            }
+          } catch (statusErr: unknown) {
+            log.warn(`[self-healing] stale-active-branch reclaim could not determine worktree status for ${task.id}: ${statusErr instanceof Error ? statusErr.message : String(statusErr)}`);
+          }
+        }
 
         if (task.worktree && await isUsableTaskWorktree(this.options.rootDir, task.worktree)) continue;
 
