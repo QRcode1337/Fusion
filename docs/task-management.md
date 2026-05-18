@@ -27,6 +27,24 @@ Dashboard `POST /tasks` now performs a pre-create duplicate gate using token-ove
   - `task.source.sourceMetadata.acknowledgedDuplicateIds = [...]`
 - Override creates emit activity type `task:duplicate-warning-overridden` with acknowledged IDs and scored candidate metadata.
 
+### Intake auto-archive (ghost-bug preflight + same-agent duplicate)
+
+Fusion applies two conservative intake heuristics that may auto-archive newly filed tasks before execution starts:
+
+- **Ghost-bug preflight** (triage finalize path): for bug-fix-shaped specs that cite concrete constructs/commands, Fusion probes current `main`. If all definitive probes show the cited bug does not reproduce, the task is archived as `auto-resolved-ghost-bug`.
+- **Same-agent duplicate intake** (create path): if the same `source.sourceAgentId` filed a highly similar task within 24h (threshold `0.75`), the later task is archived as `auto-resolved-duplicate` and the earliest sibling is kept.
+
+Both heuristics are **fail-open**: probe/detection errors, timeouts, or inconclusive signals do not block normal intake — the task continues in the regular flow.
+
+Activity + run-audit event types:
+
+- `task:auto-archived-ghost-bug`
+- `task:auto-archived-duplicate`
+
+These appear in task activity history; run-audit entries are emitted where run context exists (triage/engine paths). Store-only intake paths record activity without synthetic run context.
+
+Recovery is reversible: restore archived tasks via dashboard **Unarchive** or `fn_task_unarchive`.
+
 ### 2) Plan Mode (AI interview)
 
 Use the 💡 button to open planning mode:
