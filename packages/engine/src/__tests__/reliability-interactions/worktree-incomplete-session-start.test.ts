@@ -185,5 +185,8 @@ describe("reliability interactions: FN-4917 worktree incomplete session-start", 
 
     expect(store.moveTask).toHaveBeenCalledWith("FN-4917-T", "todo", { preserveProgress: true });
     expect(store.recordRunAuditEvent).not.toHaveBeenCalledWith(expect.objectContaining({ mutationType: "worktree:auto-recovered" }));
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "worktree:auto-recovered" }));
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalledWith(expect.objectContaining({ mutationType: "worktree:incomplete-detected" }));
+    expect(store.recordRunAuditEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "worktree:incomplete-detected" }));
   });
 });
