@@ -3350,6 +3350,8 @@ export interface MergeResult extends MergeDetails {
   branch: string;
   merged: boolean;
   noOp?: boolean;
+  ok?: true;
+  reason?: string;
   worktreeRemoved: boolean;
   branchDeleted: boolean;
   error?: string;

@@ -6157,6 +6157,29 @@ export async function aiMergeTask(
 
   // 1. Validate task state
   const task = await store.getTask(taskId);
+  if (task.column === "done" || task.column === "archived") {
+    const message = `merger: skipping squash for ${taskId} — task already finalized (column=${task.column})`;
+    mergerLog.log(message);
+    await (store as any).recordRunAuditEvent?.({
+      domain: "database",
+      mutationType: "task:auto-merge-skipped-already-done",
+      target: taskId,
+      metadata: {
+        column: task.column,
+        mergeConfirmed: task.mergeDetails?.mergeConfirmed ?? false,
+      },
+    });
+    return {
+      task,
+      branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+      merged: false,
+      noOp: true,
+      ok: true,
+      reason: "already-finalized",
+      worktreeRemoved: false,
+      branchDeleted: false,
+    };
+  }
   const mergeBlocker = getTaskMergeBlocker(task);
   if (mergeBlocker) {
     throw new Error(`Cannot merge ${taskId}: ${mergeBlocker}`);
