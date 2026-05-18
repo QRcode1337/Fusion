@@ -10,7 +10,12 @@ vi.mock("node:fs", () => ({
 
 import { PoolDoubleLeaseError, WorktreePool } from "../worktree-pool.js";
 
-// FN-4954 deterministic race backstop.
+// FN-5000:
+// - A prior "delay prepareForTask" sketch was invalid because acquire() is synchronous,
+//   so both racers complete acquire before any async barrier can interleave execution.
+// - The release-during-peer-acquire case documents the incident-shaped bug surface.
+// - The two-acquire case locks the surviving invariant: one non-null result, one null.
+// - The rehydrate case covers rehydrate collision behavior.
 describe("WorktreePool double-lease guard", () => {
   let pool: WorktreePool;
 
@@ -52,6 +57,41 @@ describe("WorktreePool double-lease guard", () => {
 
     expect(() => pool.acquire("FN-B")).toThrow(PoolDoubleLeaseError);
     expect(violations).toEqual([{ phase: "acquire", requestingTaskId: "FN-B", existingHolder: "FN-A" }]);
+  });
+
+  it("FN-4954: release during peer acquire hands out the same path twice", () => {
+    const violations: Array<{ phase: string; requestingTaskId: string; existingHolder: string }> = [];
+    pool.setInvariantViolationHandler((violation) => {
+      violations.push({
+        phase: violation.phase,
+        requestingTaskId: violation.requestingTaskId,
+        existingHolder: violation.existingHolder,
+      });
+    });
+
+    pool.release("/tmp/wt-A");
+
+    const pathA = pool.acquire("FN-A");
+    expect(pathA).toBe("/tmp/wt-A");
+    expect(pool.size).toBe(0);
+
+    // FN-4928/FN-4939 shape: stale/error cleanup releases with a mismatched task id.
+    pool.release(pathA!, "FN-B");
+
+    const pathB = pool.acquire("FN-B");
+    expect(pathB).toBe("/tmp/wt-A");
+    expect(violations).toEqual([{ phase: "release", requestingTaskId: "FN-B", existingHolder: "FN-A" }]);
+  });
+
+  it("FN-4954: two synchronous acquire() calls against a single-item pool yield exactly one non-null", () => {
+    pool.release("/tmp/wt-A");
+
+    const results = [pool.acquire("FN-A"), pool.acquire("FN-B")];
+
+    const nonNull = results.filter((r): r is string => r !== null);
+    expect(nonNull).toEqual(["/tmp/wt-A"]);
+    expect(results.filter((r) => r === null)).toHaveLength(1);
+    expect(pool.size).toBe(0);
   });
 
   it("does not throw for same-task re-entry when no idle path exists", () => {
