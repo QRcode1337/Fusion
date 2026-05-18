@@ -472,6 +472,56 @@ describe.skipIf(!SHOULD_RUN_LEGACY_EXTENSION_INTEGRATION)("fn pi extension (lega
       expect(result.details.updatedFields).toEqual(["title", "description", "dependencies"]);
     });
 
+    it("updates task priority", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", priority: "urgent" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.details.updatedFields).toEqual(["priority"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.priority).toBe("urgent");
+    });
+
+    it("updates priority combined with other fields", async () => {
+      const createTool = api.tools.get("fn_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("fn_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", title: "Retitled", priority: "high" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.details.updatedFields).toEqual(["title", "priority"]);
+
+      const showTool = api.tools.get("fn_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.title).toBe("Retitled");
+      expect(show.details.task.priority).toBe("high");
+    });
+
+    it("rejects invalid priority value", () => {
+      const updateTool = api.tools.get("fn_task_update") as any;
+      const prioritySchema = updateTool.parameters.properties.priority;
+      const literalValues = prioritySchema.anyOf.map((entry: { const: string }) => entry.const);
+      expect(literalValues).toEqual(["low", "normal", "high", "urgent"]);
+      expect(literalValues).not.toContain("critical");
+    });
+
     it("updates task assigned agent ID", async () => {
       const createTool = api.tools.get("fn_task_create")!;
       const created = await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
