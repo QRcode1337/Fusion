@@ -5872,16 +5872,15 @@ export function SettingsModal({
                   id="failureNotificationMode"
                   value={form.failureNotificationMode ?? "sticky-only"}
                   onChange={(e) => {
-                    const value = e.target.value as "sticky-only" | "all";
+                    const value = e.target.value as "sticky-only" | "all" | "terminal-only";
                     setForm((f) => ({ ...f, failureNotificationMode: value }));
                   }}
                 >
                   <option value="sticky-only">Sticky failures only (default)</option>
+                  <option value="terminal-only">Terminal failures only (suppress auto-retried)</option>
                   <option value="all">All failures (legacy)</option>
                 </select>
-                <small>
-                  Sticky-only suppresses notifications for transient failures that the engine auto-recovers. Choose &quot;All failures&quot; for the legacy immediate-notification behavior.
-                </small>
+                <small>Sticky-only suppresses recovered failures; terminal-only waits for paused/in-review failed tasks; all restores legacy alerts.</small>
               </div>
               <div className="form-group">
                 <label htmlFor="failureNotificationDelayMs">Failure notification delay (ms)</label>
