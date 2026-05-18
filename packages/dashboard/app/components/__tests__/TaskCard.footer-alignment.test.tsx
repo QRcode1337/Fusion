@@ -123,4 +123,46 @@ describe("FN-4598 TaskCard footer chip alignment", () => {
       expect(textStyle.transform).toMatch(/translateY\(1px\)|matrix\(1,\s*0,\s*0,\s*1,\s*0,\s*1\)/);
     }
   });
+
+  it("keeps github, retry, and timer as a single right-aligned cluster with token gap", () => {
+    const { container } = render(
+      <TaskCard
+        task={{
+          ...makeTask(),
+          sourceType: "dashboard_ui",
+          column: "in-review",
+          retrySummary: { total: 2 },
+          executionStartedAt: "2026-05-12T00:00:00.000Z",
+          updatedAt: "2026-05-12T00:05:00.000Z",
+        }}
+        onOpenDetail={noop}
+        addToast={noop}
+        onOpenDetailWithTab={noop}
+      />,
+    );
+
+    const footerRow = container.querySelector(".card-footer-row") as HTMLElement;
+    const githubChip = footerRow.querySelector(":scope > .card-github-tracking-chip") as HTMLElement;
+    const retryChip = footerRow.querySelector(":scope > .card-retry-badge") as HTMLElement;
+    const timerChip = footerRow.querySelector(":scope > .card-time-indicator") as HTMLElement;
+
+    expect(footerRow).toBeTruthy();
+    expect(githubChip).toBeTruthy();
+    expect(retryChip).toBeTruthy();
+    expect(timerChip).toBeTruthy();
+
+    const children = Array.from(footerRow.children);
+    expect(children).toContain(githubChip);
+    expect(children).toContain(retryChip);
+    expect(children).toContain(timerChip);
+    expect(children.indexOf(githubChip)).toBeLessThan(children.indexOf(retryChip));
+    expect(children.indexOf(retryChip)).toBeLessThan(children.indexOf(timerChip));
+
+    expect(getComputedStyle(githubChip).marginLeft).toBe("auto");
+    expect(getComputedStyle(retryChip).marginLeft).toBe("0px");
+    expect(getComputedStyle(timerChip).marginLeft).toBe("0px");
+
+    const footerStyle = getComputedStyle(footerRow);
+    expect(footerStyle.gap).toBe("var(--space-sm)");
+  });
 });

@@ -1859,8 +1859,8 @@ describe("TaskCard", () => {
     expect(trackingLink).not.toBeNull();
 
     const css = loadAllAppCssBaseOnly();
-    expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance:first-of-type\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
-    expect(css).toMatch(/\.card-source-provenance\s*\+\s*\.card-source-provenance\s*\{[^}]*margin-left:\s*0;[^}]*\}/);
+    expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance:first-of-type[\s\S]*\.card-footer-row\s*>\s*\.card-time-indicator:first-of-type\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
+    expect(css).toMatch(/\.card-source-provenance\s*\+\s*\.card-source-provenance[\s\S]*\.card-footer-row\s*>\s*\.card-retry-badge\s*\+\s*\.card-time-indicator\s*\{[^}]*margin-left:\s*0;[^}]*\}/);
     const provenanceRule = css.match(/\.card-source-provenance\s*\{[^}]*\}/)?.[0] ?? "";
     expect(provenanceRule).not.toMatch(/margin-left\s*:\s*auto/);
   });
@@ -1897,13 +1897,13 @@ describe("TaskCard", () => {
       expect((sourceBadge as Element).nextElementSibling).toBe(trackingChip);
 
       const css = loadAllAppCssBaseOnly();
-      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance:first-of-type\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
-      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance\s*\+\s*\.card-github-tracking-chip:first-of-type\s*\{[^}]*margin-left:\s*0;[^}]*\}/);
+      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance:first-of-type[\s\S]*\.card-footer-row\s*>\s*\.card-time-indicator:first-of-type\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
+      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance\s*\+\s*\.card-github-tracking-chip:first-of-type[\s\S]*\.card-footer-row\s*>\s*\.card-retry-badge\s*\+\s*\.card-time-indicator\s*\{[^}]*margin-left:\s*0;[^}]*\}/);
     });
 
     it("applies right-alignment rule when only tracking chip is rendered", () => {
       const css = loadAllAppCssBaseOnly();
-      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-github-tracking-chip:first-of-type\s*\{[^}]*margin-left:\s*auto;[^}]*\}/);
+      expect(css).toMatch(/\.card-footer-row\s*>\s*\.card-source-provenance:first-of-type[\s\S]*\.card-footer-row\s*>\s*\.card-github-tracking-chip:first-of-type[\s\S]*\{[^}]*margin-left:\s*auto;[^}]*\}/);
 
       const { container } = render(
         <TaskCard
@@ -2221,7 +2221,7 @@ describe("TaskCard", () => {
       }
     });
 
-    it("FN-4923 keeps tracking chip grouped with files-changed while timer remains right-aligned", () => {
+    it("FN-4923 keeps tracking chip, retry/timer chips grouped as one right-aligned cluster with files-changed", () => {
       const cleanupCss = mountCssForBadgeTests();
       try {
         const { container } = render(
@@ -2257,7 +2257,8 @@ describe("TaskCard", () => {
         expect(trackingChip).not.toBeNull();
         expect(timerChip).not.toBeNull();
         expect(filesChangedButton.compareDocumentPosition(trackingChip as HTMLElement)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-        expect(getComputedStyle(timerChip as HTMLElement).marginLeft).toBe("auto");
+        expect(getComputedStyle(trackingChip as HTMLElement).marginLeft).toBe("auto");
+        expect(getComputedStyle(timerChip as HTMLElement).marginLeft).toBe("0px");
       } finally {
         cleanupCss();
       }

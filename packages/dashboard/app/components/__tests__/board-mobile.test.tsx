@@ -313,9 +313,13 @@ describe("TaskCard mobile", () => {
     expectRuleToContain(css, ".card-footer-row", "flex-wrap: nowrap;");
   });
 
-  it("keeps TaskCard timer chip in-flow and right-aligned in footer metadata row", () => {
+  it("keeps TaskCard footer-chip cluster anchored by first chip rules", () => {
     const css = loadAllAppCss();
-    expectRuleToContain(css, ".card-time-indicator", "margin-left: auto;");
+    expectRuleToContain(css, ".card-footer-row > .card-time-indicator:first-of-type", "margin-left: auto;");
+
+    const timeIndicatorRule = css.match(/\.card-time-indicator\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(timeIndicatorRule).not.toContain("margin-left: auto;");
+
     expectRuleToContain(css, ".card-header-actions", "margin-left: auto;");
   });
 
