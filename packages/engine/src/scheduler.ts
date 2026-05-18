@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentSemaphore } from "./concurrency.js";
-import { planTaskWorktreePath } from "./worktree-names.js";
+import { canonicalFusionBranchName, planTaskWorktreePath } from "./worktree-names.js";
 import { schedulerLog } from "./logger.js";
 import { type PrMonitor, type PrComment } from "./pr-monitor.js";
 import { reconcileMissionFeatureState } from "./mission-feature-sync.js";
@@ -770,7 +770,7 @@ export class Scheduler {
     for (const depId of task.dependencies) {
       const dep = allTasks.find((t) => t.id === depId);
       if (dep && dep.column === "in-review" && dep.worktree) {
-        return dep.branch || `fusion/${dep.id.toLowerCase()}`;
+        return dep.branch || canonicalFusionBranchName(dep.id);
       }
     }
 
@@ -778,7 +778,7 @@ export class Scheduler {
     if (task.blockedBy) {
       const blocker = allTasks.find((t) => t.id === task.blockedBy);
       if (blocker && blocker.column === "in-review" && blocker.worktree) {
-        return blocker.branch || `fusion/${blocker.id.toLowerCase()}`;
+        return blocker.branch || canonicalFusionBranchName(blocker.id);
       }
     }
 

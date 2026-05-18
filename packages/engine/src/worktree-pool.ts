@@ -6,6 +6,7 @@ import type { Column, SecretsStore, Settings, TaskStore, WorktrunkSettings } fro
 import { assertCleanBranchAtBase, inspectBranchConflict } from "./branch-conflicts.js";
 import { worktreePoolLog } from "./logger.js";
 import { isInsideConfiguredWorktreesDir, resolveWorktreesDir } from "./worktree-paths.js";
+import { canonicalFusionBranchName } from "./worktree-names.js";
 import {
   resolveWorktrunkBinary,
 } from "./worktrunk-installer.js";
@@ -838,7 +839,7 @@ const MERGER_MANAGED_COLUMNS: ReadonlySet<Column> = new Set(["in-review", "done"
  *
  * Lists all local branches matching the `fusion/*` pattern, then compares
  * against branches stored on tasks (via `task.branch` or derived as
- * `fusion/${taskId.toLowerCase()}`). Branches belonging to tasks in the
+ * canonicalFusionBranchName(taskId)). Branches belonging to tasks in the
  * `in-review` or `done` columns are excluded because the merger is
  * responsible for cleaning those up.
  *
@@ -881,7 +882,7 @@ export async function scanOrphanedBranches(rootDir: string, store: TaskStore): P
       activeBranches.add(task.branch);
     }
     // Always add the derived name too — the task may not have `branch` set yet
-    activeBranches.add(`fusion/${task.id.toLowerCase()}`);
+    activeBranches.add(canonicalFusionBranchName(task.id));
   }
 
   // Return branches not associated with any active task

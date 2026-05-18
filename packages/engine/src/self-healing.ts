@@ -46,6 +46,7 @@ import { AutoRecoveryDispatcher } from "./auto-recovery.js";
 import { activeSessionRegistry } from "./active-session-registry.js";
 import { findAlreadyMergedTaskCommit } from "./already-merged-detector.js";
 import { resolveWorktreesDir } from "./worktree-paths.js";
+import { canonicalFusionBranchName } from "./worktree-names.js";
 import type { OwnedLandedClassification } from "./merger.js";
 import { recoverForeignOnlyContamination } from "./recovery/foreign-only-contamination.js";
 import {
@@ -438,7 +439,7 @@ export async function isBranchAheadOfBase(
   rootDir: string,
   preferredBaseRef?: string,
 ): Promise<{ aheadCount: number; baseRef: string } | null> {
-  const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
+  const branchName = task.branch || canonicalFusionBranchName(task.id);
 
   try {
     await execAsync(`git rev-parse --verify ${shellQuote(branchName)}`, {
@@ -868,7 +869,7 @@ export class SelfHealingManager {
     );
     if (completedSteps.length === 0) return;
 
-    const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
+    const branchName = task.branch || canonicalFusionBranchName(task.id);
 
     try {
       const { stdout: mergeBaseOut } = await execAsync(
@@ -1111,7 +1112,7 @@ export class SelfHealingManager {
       }
     }
 
-    const branch = task.branch || `fusion/${task.id.toLowerCase()}`;
+    const branch = task.branch || canonicalFusionBranchName(task.id);
     try {
       await execAsync(`git branch -D ${shellQuote(branch)}`, {
         cwd: this.options.rootDir,
@@ -2410,7 +2411,7 @@ export class SelfHealingManager {
         }
       }
 
-      const branchName = task?.branch || `fusion/${taskId.toLowerCase()}`;
+      const branchName = task?.branch || canonicalFusionBranchName(taskId);
       const hintedWorktreePath = options?.worktreeHint;
       let worktreePath = hintedWorktreePath;
       if (!worktreePath || !existsSync(worktreePath)) {
@@ -2530,7 +2531,7 @@ export class SelfHealingManager {
         phase: "in-review-branch-rebind",
       });
       await auditor.database({
-        type: input.mutationType,
+        type: input.mutationType as unknown as Parameters<typeof auditor.database>[0]["type"],
         target: input.taskId,
         metadata: input.metadata,
       });
@@ -2574,7 +2575,7 @@ export class SelfHealingManager {
         }
 
         const normalizedId = task.id.toLowerCase();
-        const candidates = new Set<string>([`fusion/${normalizedId}`, `fusion/${task.id}`]);
+        const candidates = new Set<string>([canonicalFusionBranchName(task.id), `fusion/`.concat(task.id)]);
         for (const branch of fusionBranches) {
           const stem = branch.startsWith("fusion/") ? branch.slice("fusion/".length) : "";
           if (stem.toLowerCase() === normalizedId) candidates.add(branch);
@@ -2617,7 +2618,7 @@ export class SelfHealingManager {
           const aheadCount = Number.parseInt(aheadCountRaw.stdout.trim(), 10);
           const normalizedBranchRef = branch.toLowerCase();
           const existingCandidate = existingCandidatesByRef.get(normalizedBranchRef);
-          const normalizedCandidate = `fusion/${normalizedId}`;
+          const normalizedCandidate = canonicalFusionBranchName(task.id);
           if (!existingCandidate || branch === normalizedCandidate) {
             existingCandidatesByRef.set(normalizedBranchRef, {
               branch,
@@ -2641,12 +2642,15 @@ export class SelfHealingManager {
         const withUniqueWork = existingCandidates.filter((candidate) => candidate.aheadCount > 0);
         if (withUniqueWork.length === 1) {
           const selected = withUniqueWork[0];
-          const patch: Partial<Task> = { branch: selected.branch, worktree: null };
+          const patch: Partial<Task> = { branch: selected.branch, worktree: null as unknown as string };
           if (!task.baseCommitSha) {
-            patch.baseCommitSha = (await execAsync(
+            const derivedBaseCommit = (await execAsync(
               `git merge-base ${shellQuote(integrationBase)} ${shellQuote(selected.branch)}`,
               { cwd: this.options.rootDir, timeout: 30_000 },
-            )).stdout.trim() || null;
+            )).stdout.trim();
+            if (derivedBaseCommit) {
+              patch.baseCommitSha = derivedBaseCommit;
+            }
           }
           // TODO(FN-5066): tighten composition once helper API is final.
           try {
@@ -2728,7 +2732,7 @@ export class SelfHealingManager {
         if (executingIds.has(task.id)) continue;
         if (activeSessionRegistry.isPathActive(task.worktree)) continue;
 
-        const normalizedBranch = `fusion/${task.id.toLowerCase()}`;
+        const normalizedBranch = canonicalFusionBranchName(task.id);
         const canonicalTaskWorktree = resolve(task.worktree);
         const stale = !existsSync(task.worktree) || !registeredPaths.has(canonicalTaskWorktree);
         if (!stale) continue;
@@ -5933,7 +5937,7 @@ export class SelfHealingManager {
       }
     }
 
-    const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
+    const branchName = task.branch || canonicalFusionBranchName(task.id);
     try {
       await execAsync(`git rev-parse --verify "${branchName}"`, {
         cwd: this.options.rootDir,

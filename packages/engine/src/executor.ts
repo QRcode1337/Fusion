@@ -27,7 +27,7 @@ import {
   VERIFICATION_LOG_MAX_CHARS,
   type VerificationResult,
 } from "./verification-utils.js";
-import { generateWorktreeName } from "./worktree-names.js";
+import { canonicalFusionBranchName, generateWorktreeName } from "./worktree-names.js";
 import { resolveTaskWorktreePath, resolveWorktreesDir } from "./worktree-paths.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
@@ -5291,7 +5291,7 @@ export class TaskExecutor {
     worktreePathOverride?: string,
   ): Promise<{ ok: true } | { ok: false; reason: "wrong_toplevel" | "wrong_branch" | "no_commits"; observed: string; expected: string }> {
     const settings = await this.store.getSettings();
-    const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
+    const branchName = task.branch || canonicalFusionBranchName(task.id);
     const worktreePath = worktreePathOverride ?? task.worktree ?? this.activeWorktrees.get(task.id) ?? null;
 
     if (!worktreePath) {
@@ -6065,7 +6065,7 @@ export class TaskExecutor {
 
     // Delete the branch — use stored branch name if available, fall back to convention
     const task = await this.store.getTask(taskId);
-    const branch = task.branch || `fusion/${taskId.toLowerCase()}`;
+    const branch = task.branch || canonicalFusionBranchName(taskId);
     let branchDeleted = false;
     try {
       await execAsync(`git branch -D "${branch}"`, { cwd: this.rootDir });
@@ -9502,7 +9502,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
     );
     if (completedSteps.length === 0) return;
 
-    const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
+    const branchName = task.branch || canonicalFusionBranchName(task.id);
 
     try {
       // Check if the branch has any unique commits vs main

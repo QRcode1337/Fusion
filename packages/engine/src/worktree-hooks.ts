@@ -28,6 +28,7 @@ if [ ! -f "$TASK_FILE" ]; then
 fi
 
 WORKTREE_TASK_ID=$(cat "$TASK_FILE")
+# Keep this canonicalized in lockstep with canonicalFusionBranchName(taskId)
 EXPECTED_BRANCH="fusion/${taskId.toLowerCase()}"
 
 if ! HEAD_BRANCH=$(git symbolic-ref --quiet --short HEAD 2>/dev/null); then

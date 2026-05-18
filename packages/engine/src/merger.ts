@@ -34,6 +34,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { resolveTaskWorktreePath } from "./worktree-paths.js";
+import { canonicalFusionBranchName } from "./worktree-names.js";
 import { hostname } from "node:os";
 import {
   buildTaskLineageTrailer,
@@ -523,7 +524,7 @@ export async function classifyOwnedLandedEvidence(
   task: Task,
   opts: { mergeTargetBranch: string },
 ): Promise<OwnedLandedClassification> {
-  const branch = task.branch || `fusion/${task.id.toLowerCase()}`;
+  const branch = task.branch || canonicalFusionBranchName(task.id);
   const mergeTargetBranch = opts.mergeTargetBranch;
 
   const ownedCommit = await findOwnedLandedCommitForTask(rootDir, task);
@@ -2572,7 +2573,7 @@ async function tryRecoverHardFailApply(params: {
       task,
       taskId,
       rootDir,
-      branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+      branch: task.branch || canonicalFusionBranchName(taskId),
       conflictFiles: threeWayConflicted,
       auditor: undefined,
     });
@@ -3001,7 +3002,7 @@ async function restoreUnrelatedRootDirChanges(
     task,
     taskId,
     rootDir,
-    branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+    branch: task.branch || canonicalFusionBranchName(taskId),
     conflictFiles: conflictedFiles,
     auditor: undefined,
   });
@@ -6172,7 +6173,7 @@ export async function aiMergeTask(
     });
     return {
       task,
-      branch: task.branch || `fusion/${taskId.toLowerCase()}`,
+      branch: task.branch || canonicalFusionBranchName(taskId),
       merged: false,
       noOp: true,
       ok: true,
@@ -6186,7 +6187,7 @@ export async function aiMergeTask(
     throw new Error(`Cannot merge ${taskId}: ${mergeBlocker}`);
   }
 
-  const branch = task.branch || `fusion/${taskId.toLowerCase()}`;
+  const branch = task.branch || canonicalFusionBranchName(taskId);
   const requestedBaseRef = task.mergeDetails?.mergeTargetBranch || "main";
   const resolveAheadCount = async (): Promise<{ aheadCount: number; baseRef: string } | null> => {
     try {
