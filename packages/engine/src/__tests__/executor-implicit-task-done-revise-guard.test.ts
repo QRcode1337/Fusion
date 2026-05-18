@@ -48,7 +48,7 @@ describe("FN-4946 implicit completion + REVISE verdict interaction", () => {
     const store = createMockStore();
     const executor = new TaskExecutor(store as any, "/repo");
 
-    await (executor as any).handleImplicitTaskDoneRefusal(makeTask({ id: "FN-4946-R1" }), "/repo/.worktrees/swift-falcon", refusal());
+    await (executor as any).handleImplicitTaskDoneRefusal(makeTask({ id: "FN-4946-R1" }), refusal());
 
     expect(store.updateTask).toHaveBeenCalledWith("FN-4946-R1", expect.objectContaining({ taskDoneRetryCount: 1, status: "failed" }));
     expect(store.moveTask).toHaveBeenCalledWith("FN-4946-R1", "todo", { preserveProgress: true });
@@ -73,7 +73,7 @@ describe("FN-4946 implicit completion + REVISE verdict interaction", () => {
     const store = createMockStore();
     const executor = new TaskExecutor(store as any, "/repo");
 
-    await (executor as any).handleImplicitTaskDoneRefusal(makeTask({ id: "FN-4946-R2" }), "/repo/.worktrees/swift-falcon", refusal());
+    await (executor as any).handleImplicitTaskDoneRefusal(makeTask({ id: "FN-4946-R2" }), refusal());
 
     const retryCountUpdates = store.updateTask.mock.calls.filter(
       ([id, patch]: [string, Record<string, unknown>]) => id === "FN-4946-R2" && "taskDoneRetryCount" in patch,

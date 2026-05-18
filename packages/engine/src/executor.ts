@@ -3976,7 +3976,7 @@ export class TaskExecutor {
               // Implicit path has no summary; evaluateTaskDoneRefusal will skip summary-claims-incomplete and only enforce pending-code-review-revise / bulk-step-completion-without-review.
               const refusal = evaluateTaskDoneRefusal(implicitCheck, {}, codeReviewVerdicts);
               if (!refusal.ok) {
-                await this.handleImplicitTaskDoneRefusal(implicitCheck, worktreePath, refusal);
+                await this.handleImplicitTaskDoneRefusal(implicitCheck, refusal);
                 return;
               }
               taskDone = true;
@@ -4210,7 +4210,7 @@ export class TaskExecutor {
                   // Implicit path has no summary; evaluateTaskDoneRefusal will skip summary-claims-incomplete and only enforce pending-code-review-revise / bulk-step-completion-without-review.
                   const refusal = evaluateTaskDoneRefusal(implicitCheck, {}, codeReviewVerdicts);
                   if (!refusal.ok) {
-                    await this.handleImplicitTaskDoneRefusal(implicitCheck, worktreePath, refusal);
+                    await this.handleImplicitTaskDoneRefusal(implicitCheck, refusal);
                     retrySession?.dispose();
                     retrySession = null;
                     retryAbortedDueToReclaim = false;
@@ -5482,10 +5482,8 @@ export class TaskExecutor {
 
   private async handleImplicitTaskDoneRefusal(
     task: Task,
-    worktreePath: string,
     refusal: Extract<ReturnType<typeof evaluateTaskDoneRefusal>, { ok: false }>,
   ): Promise<void> {
-    void worktreePath;
 
     await this.store.logEntry(task.id, refusal.message, undefined, this.currentRunContext);
     executorLog.error(`${task.id}: fn_task_done refused (${refusal.refusalClass}) — ${refusal.reason} (implicit completion)`);

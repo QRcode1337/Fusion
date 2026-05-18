@@ -40,7 +40,7 @@ describe("FN-4946 implicit refusal budget handling", () => {
     const store = createMockStore();
     const executor = new TaskExecutor(store as any, "/repo");
 
-    await (executor as any).handleImplicitTaskDoneRefusal(task(2), "/repo/.worktrees/swift-falcon", refusal());
+    await (executor as any).handleImplicitTaskDoneRefusal(task(2), refusal());
 
     expect(store.updateTask).toHaveBeenCalledWith("FN-4946-B", expect.objectContaining({ taskDoneRetryCount: 3, status: "failed" }));
     expect(store.moveTask).toHaveBeenCalledWith("FN-4946-B", "todo", { preserveProgress: true });
@@ -52,7 +52,7 @@ describe("FN-4946 implicit refusal budget handling", () => {
     const executor = new TaskExecutor(store as any, "/repo");
     const persistSpy = vi.spyOn(executor as any, "persistTokenUsage").mockResolvedValue(undefined);
 
-    await (executor as any).handleImplicitTaskDoneRefusal(task(3), "/repo/.worktrees/swift-falcon", refusal());
+    await (executor as any).handleImplicitTaskDoneRefusal(task(3), refusal());
 
     expect(store.updateTask).toHaveBeenCalledWith("FN-4946-B", expect.objectContaining({ status: "failed" }));
     expect(store.moveTask).toHaveBeenCalledWith("FN-4946-B", "in-review");
@@ -83,7 +83,6 @@ describe("FN-4946 implicit refusal budget handling", () => {
 
     await (executor as any).handleImplicitTaskDoneRefusal(
       { ...currentTask, id: "FN-4946-B2", column: "todo" },
-      "/repo/.worktrees/swift-falcon",
       refusal(),
     );
 
