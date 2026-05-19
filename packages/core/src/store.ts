@@ -596,6 +596,21 @@ export class TaskHasDependentsError extends Error {
   }
 }
 
+export class TaskHasLineageChildrenError extends Error {
+  readonly taskId: string;
+  readonly childIds: string[];
+
+  constructor(taskId: string, childIds: string[]) {
+    super(
+      `Cannot delete task ${taskId}: still referenced as a lineage parent by ${childIds.join(", ")}. ` +
+        `Pass { removeLineageReferences: true } to clear these references before deleting.`,
+    );
+    this.name = "TaskHasLineageChildrenError";
+    this.taskId = taskId;
+    this.childIds = childIds;
+  }
+}
+
 export class InvalidFileScopeError extends Error {
   readonly taskId: string;
   readonly invalidEntries: string[];
@@ -2026,6 +2041,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
     }
     return dependents;
+  }
+
+  private findLiveLineageChildren(id: string): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM tasks WHERE sourceParentTaskId = ? AND id != ? AND "column" != 'archived' AND ${TaskStore.ACTIVE_TASKS_WHERE}`,
+      )
+      .all(id, id) as Array<{ id: string }>;
+
+    return rows.map((row) => row.id);
   }
 
   /**
