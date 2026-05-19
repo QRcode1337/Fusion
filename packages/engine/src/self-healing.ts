@@ -4283,6 +4283,10 @@ export class SelfHealingManager {
 
       let repaired = 0;
       for (const task of candidates) {
+        if (task.mergeDetails?.landedFilesAttributionRestricted || task.mergeDetails?.noOpVerifiedShortCircuit) {
+          log.log(`recoverDoneTaskMergeMetadata: skipped ${task.id} — attribution-restricted`);
+          continue;
+        }
         try {
           const storedSha = task.mergeDetails?.commitSha;
           if (!storedSha) continue;

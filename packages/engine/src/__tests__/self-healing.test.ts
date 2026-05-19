@@ -6218,6 +6218,102 @@ describe("stale triage processing eviction before recovery", () => {
 // ── Maintenance cycle concurrency ──────────────────────────────────
 
 describe("recoverDoneTaskMergeMetadata", () => {
+  it("FN-5103: skips attribution-restricted done task merge metadata reconcile", async () => {
+    const store = createMockStore();
+    const manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "FN-5103-A",
+        column: "done",
+        paused: false,
+        mergeDetails: {
+          commitSha: "merge1",
+          mergeConfirmed: true,
+          landedFilesAttributionRestricted: true,
+          landedFiles: ["a.ts"],
+          filesChanged: 1,
+          insertions: 1,
+          deletions: 0,
+        },
+      },
+    ]);
+
+    const repaired = await manager.recoverDoneTaskMergeMetadata();
+
+    expect(repaired).toBe(0);
+    expect(store.updateTask).not.toHaveBeenCalled();
+
+    manager.stop();
+  });
+
+  it("FN-5103: skips no-op verified-short-circuit merge metadata reconcile", async () => {
+    const store = createMockStore();
+    const manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "FN-5103-B",
+        column: "done",
+        paused: false,
+        mergeDetails: {
+          commitSha: "merge1",
+          mergeConfirmed: true,
+          noOpVerifiedShortCircuit: true,
+          landedFiles: [],
+          filesChanged: 0,
+          insertions: 0,
+          deletions: 0,
+        },
+      },
+    ]);
+
+    const repaired = await manager.recoverDoneTaskMergeMetadata();
+
+    expect(repaired).toBe(0);
+    expect(store.updateTask).not.toHaveBeenCalled();
+
+    manager.stop();
+  });
+
+  it("FN-5103: fallback captures remain reconcilable", async () => {
+    const store = createMockStore();
+    const manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: "FN-5103-C",
+        column: "done",
+        paused: false,
+        mergeDetails: {
+          commitSha: "merge1",
+          mergeConfirmed: false,
+          landedFilesCaptureFallback: "attribution-failed",
+        },
+      },
+    ]);
+
+    vi.spyOn(manager as any, "findLandedTaskCommit").mockResolvedValue({
+      sha: "merge1",
+      subject: "fix(FN-5103): landed",
+      filesChanged: 2,
+      insertions: 4,
+      deletions: 1,
+    });
+
+    const repaired = await manager.recoverDoneTaskMergeMetadata();
+
+    expect(repaired).toBe(1);
+    expect(store.updateTask).toHaveBeenCalledWith("FN-5103-C", expect.objectContaining({
+      mergeDetails: expect.objectContaining({
+        commitSha: "merge1",
+        mergeConfirmed: true,
+      }),
+    }));
+
+    manager.stop();
+  });
+
   it("FN-3862: confirmed task with reachable owned stored SHA preserves canonical commitSha", async () => {
     const store = createMockStore();
     const manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
