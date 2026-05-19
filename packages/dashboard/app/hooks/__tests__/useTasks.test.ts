@@ -1264,6 +1264,31 @@ describe("useTasks", () => {
 
       expect(result.current.tasks.map((task) => task.id)).toEqual(["FN-AAA"]);
     });
+
+    it("search-active updates refresh from server instead of mutating local state", async () => {
+      mockFetchTasks
+        .mockResolvedValueOnce([createMockTask({ id: "FN-AAA", column: "todo" as Column })])
+        .mockReturnValueOnce(new Promise(() => {}) as Promise<Task[]>);
+
+      const { result } = renderHook(() => useTasks({ searchQuery: "deleted" }));
+      await waitFor(() => expect(result.current.tasks).toHaveLength(1));
+      mockFetchTasks.mockClear();
+
+      act(() => {
+        MockEventSource.instances[0]._emit(
+          "task:updated",
+          createMockTask({
+            id: "FN-AAA",
+            column: "todo" as Column,
+            updatedAt: "2026-05-19T00:00:00.000Z",
+            deletedAt: "2026-05-19T00:00:00.000Z",
+          }),
+        );
+      });
+
+      expect(mockFetchTasks).toHaveBeenCalledTimes(1);
+      expect(result.current.tasks.map((task) => task.id)).toEqual(["FN-AAA"]);
+    });
   });
 
   describe("SSE event: task:merged", () => {
