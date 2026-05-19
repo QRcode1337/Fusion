@@ -28,6 +28,9 @@ import {
   deterministicGuardLocks,
   runDeterministicDuplicateGuard,
   reconcileDeterministicDuplicate,
+  extractIntentSignature,
+  findNearDuplicates,
+  type NearDuplicateCandidate,
 } from "@fusion/core";
 import { GitHubClient } from "../github.js";
 import { createTrackingIssueForTask } from "../github-tracking-hook.js";
@@ -419,6 +422,22 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       const normalizedDescription = description.trim();
       const normalizedTitle = typeof title === "string" ? title : undefined;
       const acknowledgedDuplicateIds = acknowledgedDuplicates ?? [];
+      let intentSignature: ReturnType<typeof extractIntentSignature> = {
+        routePaths: [],
+        filePaths: [],
+        identifiers: [],
+        titleTokens: [],
+      };
+      try {
+        intentSignature = extractIntentSignature({
+          title: normalizedTitle,
+          description: normalizedDescription,
+        });
+      } catch (error) {
+        runtimeLogger.warn("Near-duplicate intent guard failed; proceeding", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       const contentFingerprintSeed = computeContentFingerprint({
         title: normalizedTitle,
@@ -463,29 +482,101 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       }
       contentFingerprint = deterministicGuard.fingerprint;
 
+      let matchesAfterAckFilter: DuplicateMatch[] = [];
       try {
         if (deterministicGuard.action === "duplicate" && deterministicGuard.existing) {
           throw conflict("duplicate_candidates", {
-          matches: [{
-            id: deterministicGuard.existing.id,
-            title: deterministicGuard.existing.title ?? "",
-            description: deterministicGuard.existing.description ?? "",
-            column: deterministicGuard.existing.column,
-            score: 1,
-            deterministic: true,
-          }],
+            matches: [{
+              id: deterministicGuard.existing.id,
+              title: deterministicGuard.existing.title ?? "",
+              description: deterministicGuard.existing.description ?? "",
+              column: deterministicGuard.existing.column,
+              score: 1,
+              deterministic: true,
+            }],
           });
         }
 
         const duplicateMatches = bypassDuplicateCheck === true
-        ? []
-        : await computeDuplicateMatches(scopedStore, {
-            title: normalizedTitle,
-            description: normalizedDescription,
+          ? []
+          : await computeDuplicateMatches(scopedStore, {
+              title: normalizedTitle,
+              description: normalizedDescription,
+            });
+        matchesAfterAckFilter = duplicateMatches.filter((match) => !acknowledgedDuplicateIds.includes(match.id));
+        if (matchesAfterAckFilter.length > 0) {
+          throw conflict("duplicate_candidates", { matches: matchesAfterAckFilter });
+        }
+
+      // FN-5152: layered dedup ordering remains deterministic -> similarity -> near-duplicate intent.
+      // This guard is fail-open so intake cannot be blocked by extraction/query errors.
+      if (bypassDuplicateCheck !== true) {
+        try {
+          const signalCount = intentSignature.routePaths.length + intentSignature.filePaths.length + intentSignature.identifiers.length;
+          if (signalCount > 0) {
+            const duplicateQuery = buildDuplicateQuery(normalizedTitle, normalizedDescription);
+            const nearDuplicateQueryTokens = [
+              duplicateQuery,
+              ...intentSignature.routePaths,
+              ...intentSignature.identifiers,
+            ].filter((token) => token.trim().length > 0);
+            let candidateRows = await scopedStore.searchTasks(nearDuplicateQueryTokens.join(" "), {
+              slim: true,
+              includeArchived: false,
+              limit: 50,
+            });
+            if (candidateRows.length === 0) {
+              candidateRows = await scopedStore.listTasks({ slim: true, includeArchived: false, limit: 50 });
+            }
+            const fullRows = await scopedStore.listTasks({ slim: false, includeArchived: false });
+            const byId = new Map(fullRows.map((row) => [row.id, row]));
+            const candidateMap = new Map<string, NearDuplicateCandidate>();
+            for (const row of candidateRows) {
+              if (acknowledgedDuplicateIds.includes(row.id)) {
+                continue;
+              }
+              const full = byId.get(row.id);
+              candidateMap.set(row.id, {
+                id: row.id,
+                title: row.title ?? "",
+                description: row.description ?? "",
+                column: row.column,
+                createdAt: full?.createdAt ? Date.parse(full.createdAt) : undefined,
+                fileScope: Array.isArray(full?.sourceMetadata?.fileScope)
+                  ? full.sourceMetadata.fileScope.filter((entry): entry is string => typeof entry === "string")
+                  : undefined,
+              });
+            }
+            const nearMatches = findNearDuplicates(
+              { title: normalizedTitle, description: normalizedDescription },
+              Array.from(candidateMap.values()),
+              { windowMs: 7 * 24 * 60 * 60 * 1000 },
+            );
+            if (nearMatches.length > 0) {
+              throw conflict("duplicate_candidates", {
+                matches: nearMatches.map((match) => {
+                  const candidate = candidateMap.get(match.id);
+                  return {
+                    id: match.id,
+                    title: candidate?.title ?? "",
+                    description: candidate?.description ?? "",
+                    column: candidate?.column ?? "triage",
+                    score: match.score,
+                    reason: "near-duplicate-intent",
+                    sharedTokens: match.sharedTokens,
+                  };
+                }),
+              });
+            }
+          }
+        } catch (error) {
+          if (error instanceof ApiError) {
+            throw error;
+          }
+          runtimeLogger.warn("Near-duplicate intent guard failed; proceeding", {
+            error: error instanceof Error ? error.message : String(error),
           });
-      const matchesAfterAckFilter = duplicateMatches.filter((match) => !acknowledgedDuplicateIds.includes(match.id));
-      if (matchesAfterAckFilter.length > 0) {
-        throw conflict("duplicate_candidates", { matches: matchesAfterAckFilter });
+        }
       }
 
       const normalizedTaskSource = normalizedSource as TaskSource;
@@ -513,6 +604,9 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
           sourceMetadata: {
             ...(normalizedTaskSource.sourceMetadata ?? {}),
             ...(contentFingerprint ? { contentFingerprint } : {}),
+            ...(intentSignature.routePaths.length + intentSignature.filePaths.length + intentSignature.identifiers.length > 0
+              ? { intentSignature }
+              : {}),
             ...(acknowledgedDuplicateIds.length > 0
               ? {
                   duplicateWarningOverridden: true,
@@ -544,24 +638,24 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         }
 
         if (acknowledgedDuplicateIds.length > 0) {
-        try {
-          await scopedStore.recordActivity({
-            type: "task:duplicate-warning-overridden",
-            taskId: task.id,
-            taskTitle: task.title,
-            details: `Created despite ${acknowledgedDuplicateIds.length} possible duplicate(s): ${acknowledgedDuplicateIds.join(", ")}`,
-            metadata: {
-              acknowledgedDuplicateIds,
-              matches: matchesAfterAckFilter.map((match) => ({ id: match.id, score: match.score })),
-            },
-          });
-        } catch (error) {
-          runtimeLogger.warn("Failed to record duplicate warning override activity", {
-            taskId: task.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          try {
+            await scopedStore.recordActivity({
+              type: "task:duplicate-warning-overridden",
+              taskId: task.id,
+              taskTitle: task.title,
+              details: `Created despite ${acknowledgedDuplicateIds.length} possible duplicate(s): ${acknowledgedDuplicateIds.join(", ")}`,
+              metadata: {
+                acknowledgedDuplicateIds,
+                matches: matchesAfterAckFilter.map((match) => ({ id: match.id, score: match.score })),
+              },
+            });
+          } catch (error) {
+            runtimeLogger.warn("Failed to record duplicate warning override activity", {
+              taskId: task.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-      }
 
         res.status(201).json(task);
         return;
