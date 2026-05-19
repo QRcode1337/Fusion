@@ -372,6 +372,12 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
               Merged {new Date(mergeDetails.mergedAt).toLocaleString()}
             </div>
           )}
+          {mergeDetails.noOpVerifiedShortCircuit && (
+            <div className="text-muted">Verified short-circuit — work was already on main (rebase walked foreign commits).</div>
+          )}
+          {mergeDetails.landedFilesCaptureFallback === "attribution-failed" && (
+            <div className="text-muted">Landed-files set may include foreign commits (attribution unavailable).</div>
+          )}
         </div>
       )}
 

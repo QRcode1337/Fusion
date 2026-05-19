@@ -316,6 +316,30 @@ describe("TaskChangesTab — commit-backed (done tasks)", () => {
     expect(screen.getByText(/Merged .+/)).toBeTruthy();
   });
 
+  it("renders attribution notes for short-circuit and fallback merge details", async () => {
+    mockFetchTaskDiff.mockResolvedValue(DONE_TASK_DIFF);
+
+    render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree={undefined}
+        column="done"
+        mergeDetails={{
+          ...MERGE_DETAILS,
+          noOpVerifiedShortCircuit: true,
+          landedFilesCaptureFallback: "attribution-failed",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Verified short-circuit — work was already on main (rebase walked foreign commits)."))
+        .toBeTruthy();
+    });
+    expect(screen.getByText("Landed-files set may include foreign commits (attribution unavailable)."))
+      .toBeTruthy();
+  });
+
   it("uses mergeDetails stats for summary", async () => {
     mockFetchTaskDiff.mockResolvedValue(DONE_TASK_DIFF);
 
