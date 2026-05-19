@@ -5128,9 +5128,22 @@ export class TaskExecutor {
 
         // If the persisted status doesn't match the requested status, the
         // store rejected the transition (currently: in-progress regression
-        // on a done/skipped step). Tell the agent honestly so it doesn't
-        // assume the step reopened.
+        // on a done/skipped step). FN-5168 treats repeated rebuffs after loop
+        // recovery as a deterministic churn signal, but the agent-facing text
+        // stays unchanged so the tool contract is preserved.
         if (persistedStatus !== status) {
+          stuckDetector?.recordIgnoredStepUpdate(taskId);
+
+          const ignoredStepUpdates = stuckDetector?.getIgnoredStepUpdateCount(taskId) ?? 0;
+          const loopAttempts = this.loopRecoveryState.get(taskId)?.attempts ?? 0;
+          if (loopAttempts >= 1 && ignoredStepUpdates === 25) {
+            executorLog.warn(
+              `${taskId}: no-progress churn detected ` +
+              `(ignoredStepUpdates=${ignoredStepUpdates}, stuckKillStreak=${task.stuckKillCount ?? 0}) — ` +
+              `escalating to STUCK_NO_PROGRESS_CHURN`,
+            );
+          }
+
           return {
             content: [{
               type: "text" as const,
@@ -9724,6 +9737,10 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
 
     executorLog.log(`${taskId} compaction succeeded (freed ${compactResult.tokensBefore} tokens) — setting recovery-pending`);
     await this.store.logEntry(taskId, `Context compacted successfully — will resume with fresh context`);
+
+    // FN-5168: once loop recovery has fired in this execute() lifecycle,
+    // ignored fn_task_update rebuffs can be promoted to no-progress churn.
+    this.options.stuckTaskDetector?.markLoopObserved(taskId);
 
     // Mark recovery-pending so the execution flow can consume it
     this.loopRecoveryState.set(taskId, { attempts: attempt, pending: true });
