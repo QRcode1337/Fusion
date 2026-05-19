@@ -1119,6 +1119,10 @@ export class InProcessRuntime
     return this.heartbeatMonitor;
   }
 
+  getSelfHealingManager(): SelfHealingManager | undefined {
+    return this.selfHealingManager;
+  }
+
   /**
    * Get the HeartbeatTriggerScheduler instance (if initialized).
    * Returns undefined when agent monitoring is not available.

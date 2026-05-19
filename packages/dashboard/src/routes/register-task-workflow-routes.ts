@@ -182,6 +182,10 @@ interface TaskWorkflowRouteDeps {
   runGitCommand: (args: string[], cwd: string, timeoutMs: number) => Promise<string>;
   trimTaskDetailActivityLog: (task: TaskDetail) => TaskDetail;
   triggerCommentWakeForAssignedAgent: (scopedStore: TaskStore, task: Task, wake: { triggeringCommentType: "steering" | "task" | "pr"; triggeringCommentIds?: string[]; triggerDetail: string }) => Promise<void>;
+  resolveSelfHealingManager: (scopedStore: TaskStore) => {
+    rootDir: string;
+    reconcileInReviewBranchRebind: (opts?: { includeTaskIds?: Set<string> }) => Promise<import("@fusion/engine").RebindResult>;
+  } | undefined;
 }
 
 export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWorkflowRouteDeps): void {
@@ -195,6 +199,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     runGitCommand,
     trimTaskDetailActivityLog,
     triggerCommentWakeForAssignedAgent,
+    resolveSelfHealingManager,
   } = deps;
   const TASK_DETAIL_ACTIVITY_LOG_LIMIT = taskDetailActivityLogLimit;
 
@@ -680,6 +685,47 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         : (err instanceof Error ? err.message : String(err)).includes("conflict") ? 409
         : 500;
       throw new ApiError(status, err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  router.post("/tasks/:id/recover-branch-binding", async (req, res) => {
+    try {
+      const { store: scopedStore, engine } = await getProjectContext(req);
+      const task = await scopedStore.getTask(req.params.id);
+      if (!task?.id) {
+        throw notFound("Task not found");
+      }
+      if (task.column !== "in-review") {
+        throw badRequest("Task must be in in-review to recover branch binding");
+      }
+
+      const directManager = (engine as { getSelfHealingManager?: () => unknown } | undefined)?.getSelfHealingManager?.();
+      const runtimeManager =
+        (engine as { getRuntime?: () => { getSelfHealingManager?: () => unknown } } | undefined)?.getRuntime?.()
+          ?.getSelfHealingManager?.();
+      const selfHealingManager = (directManager ?? runtimeManager ?? resolveSelfHealingManager(scopedStore)) as
+        | {
+          reconcileInReviewBranchRebind: (opts?: { includeTaskIds?: Set<string> }) => Promise<import("@fusion/engine").RebindResult>;
+        }
+        | undefined;
+
+      if (!selfHealingManager) {
+        throw new ApiError(503, "Self-healing manager is unavailable");
+      }
+
+      const result = await selfHealingManager.reconcileInReviewBranchRebind({
+        includeTaskIds: new Set([req.params.id]),
+      });
+      const outcome = result.outcomes.find((entry) => entry.taskId === req.params.id);
+      if (!outcome) {
+        throw new ApiError(500, "No rebind outcome returned for requested task");
+      }
+      res.json(outcome);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      throw new ApiError(500, err instanceof Error ? err.message : String(err));
     }
   });
 

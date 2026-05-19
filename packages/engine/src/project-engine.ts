@@ -635,6 +635,10 @@ export class ProjectEngine {
     return this.runtime.getHeartbeatMonitor();
   }
 
+  getSelfHealingManager() {
+    return this.runtime.getSelfHealingManager();
+  }
+
   /** Get the project working directory. */
   getWorkingDirectory(): string {
     return this.config.workingDirectory;

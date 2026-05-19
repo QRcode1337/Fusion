@@ -255,6 +255,10 @@ export interface ServerOptions {
     }): Promise<import("@fusion/core").AgentHeartbeatRun>;
     stopRun(agentId: string): Promise<void>;
   };
+  selfHealingManager?: {
+    rootDir: string;
+    reconcileInReviewBranchRebind: (opts?: { includeTaskIds?: Set<string> }) => Promise<import("@fusion/engine").RebindResult>;
+  };
   /** Optional PluginStore for plugin management routes */
   pluginStore?: import("@fusion/core").PluginStore;
   /** Optional PluginLoader for plugin lifecycle management */
@@ -570,6 +574,18 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
             startRun: hb.startRun.bind(hb),
             executeHeartbeat: hb.executeHeartbeat.bind(hb),
             stopRun: hb.stopRun.bind(hb),
+          },
+        };
+      }
+    }
+    if (!options!.selfHealingManager) {
+      const selfHealing = engine.getSelfHealingManager();
+      if (selfHealing) {
+        options = {
+          ...options,
+          selfHealingManager: {
+            rootDir: engine.getWorkingDirectory(),
+            reconcileInReviewBranchRebind: selfHealing.reconcileInReviewBranchRebind.bind(selfHealing),
           },
         };
       }
