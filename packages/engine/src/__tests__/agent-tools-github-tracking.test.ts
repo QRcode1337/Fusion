@@ -96,11 +96,11 @@ describe("createAgentTask githubTracking prefill", () => {
     await rm(globalDir, { recursive: true, force: true });
   });
 
-  async function createViaAgentTask(params: Record<string, unknown> = {}): Promise<{ githubTracking?: { enabled?: boolean; repoOverride?: string } }> {
+  async function createViaAgentTask(params: Partial<{ githubTracking: { enabled?: boolean; repoOverride?: string } }> = {}): Promise<{ githubTracking?: { enabled?: boolean; repoOverride?: string } }> {
     const created = await createAgentTask(store, {
       description: "tracking defaults task",
       source: { sourceType: "api" },
-      ...(params as never),
+      ...params,
     });
     const task = await store.getTask(created.task.id);
     return task;

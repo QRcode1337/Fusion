@@ -7,8 +7,10 @@ import { TaskStore, setTaskCreatedHook } from "@fusion/core";
 import { HeartbeatMonitor } from "../agent-heartbeat.js";
 import { createDelegateTaskTool, createTaskCreateTool } from "../agent-tools.js";
 
-const githubTrackingHookModulePromise: Promise<any> = import("../../../dashboard/src/github-tracking-hook.js");
-const githubTrackingModulePromise: Promise<any> = import("../../../dashboard/src/github-tracking.js");
+const githubTrackingHookEntry = "../../../dashboard/src/github-tracking-hook.js";
+const githubTrackingEntry = "../../../dashboard/src/github-tracking.js";
+const githubTrackingHookModulePromise: Promise<any> = import(/* @vite-ignore */ githubTrackingHookEntry);
+const githubTrackingModulePromise: Promise<any> = import(/* @vite-ignore */ githubTrackingEntry);
 
 function makeTmpDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
