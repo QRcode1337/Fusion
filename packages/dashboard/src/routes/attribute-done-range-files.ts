@@ -53,7 +53,7 @@ function extractTaskIdFromSubject(subject: string): {
 }
 
 function taskIdsMatch(a: string | null, b: string): boolean {
-  return Boolean(a) && a.toUpperCase() === b.toUpperCase();
+  return a !== null && a.toUpperCase() === b.toUpperCase();
 }
 
 export async function filterFilesToOwnTaskCommits(opts: DoneRangeAttributionOptions): Promise<DoneRangeAttributionResult> {
