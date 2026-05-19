@@ -287,13 +287,14 @@ async function formatDuplicateLineageLine(task: Task, store: TaskStore): Promise
   return `Duplicate of: ${labels.join(", ")}`;
 }
 
-function formatTaskLine(t: Task): string {
+export function formatTaskLine(t: Task): string {
   const label =
     t.title || t.description.slice(0, 60) + (t.description.length > 60 ? "…" : "");
   const source = getTaskSourceLabel(t);
   const sourceSuffix = source ? ` [via: ${source}]` : "";
   const deps = t.dependencies.length ? ` [deps: ${t.dependencies.join(", ")}]` : "";
-  const paused = t.paused ? " (paused)" : "";
+  const isTerminalColumn = t.column === "done" || t.column === "archived";
+  const paused = t.paused && !isTerminalColumn ? " (paused)" : "";
   return `${t.id}  ${label}${sourceSuffix}${deps}${paused}`;
 }
 
