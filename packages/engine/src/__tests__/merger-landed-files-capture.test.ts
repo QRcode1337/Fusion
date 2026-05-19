@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BranchAttributionError } from "../branch-attribution.js";
+import * as attributionModule from "../branch-attribution.js";
 import { createMockStore, mockedCreateFnAgent, mockedExecSync, mockedExistsSync, type Task } from "./merger-test-helpers.js";
 import * as mergerModule from "../merger.js";
 
@@ -41,8 +43,15 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
     expect(detailsUpdate?.[1].modifiedFiles).toEqual(["a.ts", "b.ts"]);
   });
 
-  it("captures rebase landedFiles from rebaseBaseSha..commitSha", async () => {
+  it("FN-5052 regression: rebase walking 66 foreign commits attributes only the 1 own commit", async () => {
     const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
+      files: ["packages/engine/src/self-healing.ts"],
+      foreignCommits: Array.from({ length: 66 }, (_, i) => `foreign-${i}`),
+      ownCommitCount: 1,
+      ownCommitShas: ["ownsha1"],
+      rawDiffFileCount: 67,
+    });
     mockedExecSync.mockImplementation((cmd: any) => {
       const s = String(cmd);
       if (s.includes("rev-parse --verify")) return Buffer.from("abc123");
@@ -54,8 +63,7 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
       if (s.includes("status --porcelain")) return "";
       if (s.includes("rev-parse --git-path CHERRY_PICK_HEAD")) return ".git/CHERRY_PICK_HEAD";
       if (s.includes("rev-parse --git-path sequencer")) return ".git/sequencer";
-      if (s.includes("diff --shortstat \"rebasebase123..HEAD\"")) return "2 files changed, 4 insertions(+), 1 deletion(-)";
-      if (s.includes("diff --name-only \"rebasebase123..rebasesha123\"")) return "c.ts\nd.ts\n";
+      if (s.includes("show --shortstat --format= \"ownsha1\"")) return "1 file changed, 3 insertions(+)";
       if (s.includes("branch -d") || s.includes("branch -D") || s.includes("worktree remove")) return Buffer.from("");
       return Buffer.from("");
     });
@@ -63,8 +71,62 @@ describe("FN-4646 aiMergeTask landedFiles capture", () => {
     await mergerModule.aiMergeTask(store, "/tmp/root", "FN-4646");
     const detailsUpdate = (store.updateTask as any).mock.calls.find((call: any[]) => call[1]?.mergeDetails?.commitSha === "rebasesha123");
     expect(detailsUpdate?.[1].mergeDetails.rebaseBaseSha).toBe("rebasebase123");
+    expect(detailsUpdate?.[1].mergeDetails.landedFiles).toEqual(["packages/engine/src/self-healing.ts"]);
+    expect(detailsUpdate?.[1].mergeDetails.landedFilesAttributionRestricted).toBe(true);
+    expect(detailsUpdate?.[1].modifiedFiles).toEqual(["packages/engine/src/self-healing.ts"]);
+  });
+
+  it("FN-5052 short-circuit variant: zero own commits yields empty landed files and keeps modifiedFiles", async () => {
+    const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockResolvedValue({
+      files: [], foreignCommits: Array.from({ length: 66 }, (_, i) => `foreign-${i}`), ownCommitCount: 0, ownCommitShas: [], rawDiffFileCount: 66,
+    });
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const s = String(cmd);
+      if (s.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (s === "git rev-parse HEAD" || s.startsWith("git rev-parse HEAD ")) return "rebasesha123";
+      if (s.includes("git log")) return "- feat: summary";
+      if (s.includes("merge-base")) return Buffer.from("abc123");
+      if (s.includes("rev-parse \"abc123\"")) return "rebasebase123";
+      if (s.includes("rev-list --reverse \"rebasebase123..fusion/FN-4646\"")) return "";
+      if (s.includes("status --porcelain")) return "";
+      if (s.includes("rev-parse --git-path CHERRY_PICK_HEAD")) return ".git/CHERRY_PICK_HEAD";
+      if (s.includes("rev-parse --git-path sequencer")) return ".git/sequencer";
+      if (s.includes("branch -d") || s.includes("branch -D") || s.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    await mergerModule.aiMergeTask(store, "/tmp/root", "FN-4646");
+    const detailsUpdate = (store.updateTask as any).mock.calls.find((call: any[]) => call[1]?.mergeDetails?.commitSha === "rebasesha123");
+    expect(detailsUpdate?.[1].mergeDetails.landedFiles).toEqual([]);
+    expect(detailsUpdate?.[1].mergeDetails.noOpVerifiedShortCircuit).toBe(true);
+    expect(detailsUpdate?.[1].modifiedFiles).toBeUndefined();
+  });
+
+  it("falls back to legacy rebase capture when attribution fails", async () => {
+    const store = makeStore({ directMergeCommitStrategy: "always-rebase" });
+    vi.spyOn(attributionModule, "filterFilesToOwnTaskCommits").mockRejectedValue(new BranchAttributionError("boom"));
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const s = String(cmd);
+      if (s.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (s === "git rev-parse HEAD" || s.startsWith("git rev-parse HEAD ")) return "rebasesha123";
+      if (s.includes("git log")) return "- feat: summary";
+      if (s.includes("merge-base")) return Buffer.from("abc123");
+      if (s.includes("rev-parse \"abc123\"")) return "rebasebase123";
+      if (s.includes("rev-list --reverse \"rebasebase123..fusion/FN-4646\"")) return "";
+      if (s.includes("status --porcelain")) return "";
+      if (s.includes("rev-parse --git-path CHERRY_PICK_HEAD")) return ".git/CHERRY_PICK_HEAD";
+      if (s.includes("rev-parse --git-path sequencer")) return ".git/sequencer";
+      if (s.includes("diff --name-only \"rebasebase123..rebasesha123\"")) return "c.ts\nd.ts\n";
+      if (s.includes("diff --shortstat \"rebasebase123..HEAD\"")) return "2 files changed, 4 insertions(+), 1 deletion(-)";
+      if (s.includes("branch -d") || s.includes("branch -D") || s.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    await mergerModule.aiMergeTask(store, "/tmp/root", "FN-4646");
+    const detailsUpdate = (store.updateTask as any).mock.calls.find((call: any[]) => call[1]?.mergeDetails?.commitSha === "rebasesha123");
     expect(detailsUpdate?.[1].mergeDetails.landedFiles).toEqual(["c.ts", "d.ts"]);
-    expect(detailsUpdate?.[1].modifiedFiles).toEqual(["c.ts", "d.ts"]);
+    expect(detailsUpdate?.[1].mergeDetails.landedFilesCaptureFallback).toBe("attribution-failed");
   });
 
   it("skips landedFiles capture for mergeWasEmpty", async () => {
