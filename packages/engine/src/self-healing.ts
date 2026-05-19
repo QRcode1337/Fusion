@@ -3449,7 +3449,10 @@ export class SelfHealingManager {
             mergedAt,
             mergeTargetBranch: classification.baseRef,
           };
-          await this.store.updateTask(task.id, { mergeDetails, modifiedFiles: [] });
+          // FN-5092 hotfix: clear transient merger-queue status alongside mergeDetails
+          // patch so a leaked `mergeActive` slot from a prior merge attempt cannot survive
+          // this auto-finalize path. Same bug class as recoverBranchMisboundInReviewTasks().
+          await this.store.updateTask(task.id, { mergeDetails, modifiedFiles: [], status: null, error: null, paused: false });
           await this.recordIntegrityAudit(task.id, "task:integrity-reconcile-modified-files", {
             reason: "proven-no-op-finalize",
             clearedCount: task.modifiedFiles?.length ?? 0,
@@ -5028,6 +5031,12 @@ export class SelfHealingManager {
 
           await this.clearCompletionBranchIfSubsumed(task, branch).catch(() => false);
 
+          // FN-5092 hotfix: clear transient merger-queue status (`status: "merging"` set
+          // by the original merger attempt) before transitioning to done. Without this,
+          // a stale `mergeActive` slot for this task leaks indefinitely and blocks the
+          // entire merger queue until engine restart. Mirrors the pattern in
+          // merger.ts completeTask() and project-engine.ts auto-merge already-confirmed path.
+          await this.store.updateTask(task.id, { status: null, error: null, paused: false });
           const movedTask = await this.store.moveTask(task.id, "done");
           this.emitTaskMerged(movedTask, { mergeConfirmed: true });
           await this.store.logEntry(
