@@ -3401,27 +3401,29 @@ export function TaskDetailContent({
                 }}
                 addToast={addToast}
               />
-              <PrCreateModal
-                open={prCreateOpen}
-                taskId={task.id}
-                projectId={projectId}
-                defaultBaseBranch={undefined}
-                onClose={() => setPrCreateOpen(false)}
-                onCreated={(prInfo) => {
-                  const nextPrInfos = [...(task.prInfos ?? (task.prInfo ? [task.prInfo] : [])), prInfo];
-                  (task as TaskDetail).prInfo = nextPrInfos[0] ?? prInfo;
-                  (task as TaskDetail).prInfos = nextPrInfos;
-                  onTaskUpdated?.({ ...workingTask, prInfo: nextPrInfos[0] ?? prInfo, prInfos: nextPrInfos } as Task);
-                  setPrCreateOpen(false);
-                }}
-                addToast={addToast}
-              />
             </div>
             </>
           )}
           </>
           )}
           </>
+          )}
+          {task.column === "in-review" && (
+            <PrCreateModal
+              open={prCreateOpen}
+              taskId={task.id}
+              projectId={projectId}
+              defaultBaseBranch={undefined}
+              onClose={() => setPrCreateOpen(false)}
+              onCreated={(prInfo) => {
+                const nextPrInfos = [...(task.prInfos ?? (task.prInfo ? [task.prInfo] : [])), prInfo];
+                (task as TaskDetail).prInfo = nextPrInfos[0] ?? prInfo;
+                (task as TaskDetail).prInfos = nextPrInfos;
+                onTaskUpdated?.({ ...workingTask, prInfo: nextPrInfos[0] ?? prInfo, prInfos: nextPrInfos } as Task);
+                setPrCreateOpen(false);
+              }}
+              addToast={addToast}
+            />
           )}
         </div>
         {showRecoverBranchBindingBanner && (
