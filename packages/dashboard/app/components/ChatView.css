@@ -1405,9 +1405,9 @@
   font-size: 14px;
   font-family: inherit;
   line-height: 1.4;
-  max-height: 320px;
+  max-height: 640px;
   min-height: 40px;
-  /* Mobile keeps the desktop cap because the surrounding chat-input-area
+  /* Mobile keeps the desktop 640px cap because the surrounding chat-input-area
      and thread flex bounds already prevent the composer from overtaking
      the message pane before textarea scrolling engages. */
   /* touch-action: manipulation allows tap-to-focus (so iOS doesn't

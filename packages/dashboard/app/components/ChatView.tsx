@@ -51,7 +51,9 @@ export interface ChatViewProps {
   experimentalFeatures?: Record<string, boolean>;
 }
 
-const CHAT_INPUT_MAX_HEIGHT_PX = 320;
+// Keep a generous cap so pasted multi-paragraph text stays visible while
+// still preventing the composer from overtaking the message pane on short viewports.
+const CHAT_INPUT_MAX_HEIGHT_PX = 640;
 
 export function clampChatInputHeight(scrollHeight: number): number {
   return Math.min(scrollHeight, CHAT_INPUT_MAX_HEIGHT_PX);
