@@ -41,7 +41,10 @@ import { extractTaskIdTokens, normalizeTitleForTaskId } from "./task-title-id-dr
 import { resolveTitleSummarizerSettingsModel } from "./model-resolution.js";
 import { getErrorMessage } from "./error-message.js";
 import { getTaskCreatedHook } from "./task-creation-hooks.js";
-import { assertProjectRootDir } from "./project-root-guard.js";
+import {
+  assertNotLinkedWorktreeOfExistingProject,
+  assertProjectRootDir,
+} from "./project-root-guard.js";
 import { generateTaskLineageId, normalizeTaskCommitAssociation } from "./task-lineage.js";
 import { createDistributedTaskIdAllocator, reconcileTaskIdState, resolveLocalNodeId, type DistributedTaskIdAllocator } from "./distributed-task-id.js";
 import { detectStalledReview } from "./stalled-review-detector.js";
@@ -955,6 +958,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     super();
     this.setMaxListeners(100);
     assertProjectRootDir(rootDir, "TaskStore");
+    assertNotLinkedWorktreeOfExistingProject(rootDir, "TaskStore");
     this.fusionDir = join(rootDir, ".fusion");
     this.tasksDir = join(this.fusionDir, "tasks");
     this.configPath = join(this.fusionDir, "config.json");

@@ -230,6 +230,11 @@ export {
   MasterKeyPermissionError,
   MasterKeyCorruptError,
 } from "./master-key.js";
+export {
+  assertNotLinkedWorktreeOfExistingProject,
+  assertProjectRootDir,
+  LinkedWorktreeBootstrapRefusedError,
+} from "./project-root-guard.js";
 export { discoverPiExtensions, formatPiExtensionSource, getEnabledPiExtensionPaths, getFusionAgentDir, getFusionAgentSettingsPath, getLegacyPiAgentDir, getPiExtensionDiscoveryDirs, getProjectRootFromWorktree, reconcileClaudeCliPaths, reconcileDroidCliPaths, resolvePiExtensionProjectRoot, updatePiExtensionDisabledIds } from "./pi-extensions.js";
 export type { PiExtensionEntry, PiExtensionSettings, PiExtensionSource } from "./pi-extensions.js";
 export { canTransition, getValidTransitions, resolveDependencyOrder } from "./board.js";
