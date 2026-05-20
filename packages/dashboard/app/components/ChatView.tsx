@@ -56,7 +56,10 @@ export interface ChatViewProps {
 const CHAT_INPUT_MAX_HEIGHT_PX = 640;
 
 export function clampChatInputHeight(scrollHeight: number): number {
-  return Math.min(scrollHeight, CHAT_INPUT_MAX_HEIGHT_PX);
+  // Floor matches QuickChat (clampQuickChatInputHeight) and the CSS min-height,
+  // so a 0-scrollHeight measurement (e.g. before layout) still yields a
+  // sensible inline height instead of collapsing the composer to 0.
+  return Math.max(40, Math.min(scrollHeight, CHAT_INPUT_MAX_HEIGHT_PX));
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -1983,6 +1986,13 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
     const nextValue = textarea.value;
     const cursorPos = textarea.selectionStart ?? nextValue.length;
 
+    // Resize BEFORE the state update so the textarea grows in the same frame
+    // the user typed in (matches QuickChat). Doing it after setMessageInput
+    // works in tests but can lose the height in production because React 18
+    // batches the state update and the controlled-component value reset can
+    // happen before our direct DOM height assignment lands.
+    resizeComposer(textarea);
+
     mentionCursorPosRef.current = cursorPos;
     setMessageInput(nextValue);
 
@@ -2003,8 +2013,6 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
     if (fileMention.mentionActive) {
       updateFileMentionPosition(textarea);
     }
-
-    resizeComposer(textarea);
   }, [updateMentionState, resizeComposer]);
 
   const handleInputSelectionChange = useCallback(
