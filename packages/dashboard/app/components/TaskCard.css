@@ -718,6 +718,10 @@
   align-items: center;
 }
 
+.card-footer-row > .card-time-indicator:first-of-type {
+  margin-left: auto;
+}
+
 .card-time-indicator,
 .card-github-tracking-chip,
 .card-retry-badge,
