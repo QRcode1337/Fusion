@@ -224,6 +224,8 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     upsertTaskDocument: vi.fn(),
     deleteTaskDocument: vi.fn().mockResolvedValue(undefined),
     updatePrInfo: vi.fn().mockResolvedValue(undefined),
+    updatePrInfoByNumber: vi.fn().mockResolvedValue(undefined),
+    addPrInfo: vi.fn().mockResolvedValue(undefined),
     updateIssueInfo: vi.fn().mockResolvedValue(undefined),
     getRootDir: vi.fn().mockReturnValue("/fake/root"),
     listWorkflowSteps: vi.fn().mockResolvedValue([]),
@@ -2803,7 +2805,11 @@ describe("Pause/Unpause endpoints", () => {
       expect(res.body.error).toContain("in-review");
     });
 
-    it("returns 409 if task already has a PR", async () => {
+    it("allows adding another PR even when a task already has one (multi-PR support)", async () => {
+      // FN-4967 added multi-PR support: the route no longer rejects in-review
+      // tasks that already have a primary PR. The handler reaches the GitHub
+      // calls and, with no real git remote configured, fails downstream
+      // (400/500). Just verify the early 409 is gone.
       (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
         ...FAKE_TASK_DETAIL,
         column: "in-review",
@@ -2818,8 +2824,7 @@ describe("Pause/Unpause endpoints", () => {
         { "Content-Type": "application/json" }
       );
 
-      expect(res.status).toBe(409);
-      expect(res.body.error).toContain("already has PR");
+      expect(res.status).not.toBe(409);
     });
 
     it("returns 400 if title is missing", async () => {
