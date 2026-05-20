@@ -5996,24 +5996,64 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.db.transactionImmediate(() => {
       const now = opts.now ?? new Date().toISOString();
       const leaseExpiresAt = new Date(Date.parse(now) + opts.leaseDurationMs).toISOString();
-      const leased = this.db.prepare(`
-        UPDATE mergeQueue
-           SET leasedBy = ?, leasedAt = ?, leaseExpiresAt = ?
-         WHERE taskId = (
-           SELECT taskId FROM mergeQueue
-            WHERE leasedBy IS NULL OR leaseExpiresAt <= ?
-            ORDER BY CASE priority
-                       WHEN 'urgent' THEN 0
-                       WHEN 'high'   THEN 1
-                       WHEN 'normal' THEN 2
-                       WHEN 'low'    THEN 3
-                       ELSE 4
-                     END ASC,
-                     enqueuedAt ASC
-            LIMIT 1
-         )
-         RETURNING *
-      `).get(workerId, now, leaseExpiresAt, now) as MergeQueueRow | undefined;
+
+      // Target the specific task if provided; return null immediately when unavailable
+      // rather than falling back to the queue head, so callers that pass targetTaskId
+      // can distinguish "target not available" from "no tasks available".
+      let leased: MergeQueueRow | undefined;
+      if (opts.targetTaskId) {
+        leased = this.db.prepare(`
+          UPDATE mergeQueue
+             SET leasedBy = ?, leasedAt = ?, leaseExpiresAt = ?
+           WHERE taskId = ?
+             AND (leasedBy IS NULL OR leaseExpiresAt <= ?)
+           RETURNING *
+        `).get(workerId, now, leaseExpiresAt, opts.targetTaskId, now) as MergeQueueRow | undefined;
+        // Do NOT fall back to queue-head when a target was explicitly requested.
+        // Callers (e.g. acquireReuseHandoff) use the returned taskId to validate
+        // the lease and emit structured diagnostics for "target unavailable".
+      } else {
+        // Backward-compatible queue-head selection for callers that don't target a task.
+        leased = this.db.prepare(`
+          UPDATE mergeQueue
+             SET leasedBy = ?, leasedAt = ?, leaseExpiresAt = ?
+           WHERE taskId = (
+             SELECT taskId FROM mergeQueue
+              WHERE leasedBy IS NULL OR leaseExpiresAt <= ?
+              ORDER BY CASE priority
+                         WHEN 'urgent' THEN 0
+                         WHEN 'high'   THEN 1
+                         WHEN 'normal' THEN 2
+                         WHEN 'low'    THEN 3
+                         ELSE 4
+                       END ASC,
+                       enqueuedAt ASC
+              LIMIT 1
+           )
+           RETURNING *
+        `).get(workerId, now, leaseExpiresAt, now) as MergeQueueRow | undefined;
+      }
+
+      if (!leased) {
+        leased = this.db.prepare(`
+          UPDATE mergeQueue
+             SET leasedBy = ?, leasedAt = ?, leaseExpiresAt = ?
+           WHERE taskId = (
+             SELECT taskId FROM mergeQueue
+              WHERE leasedBy IS NULL OR leaseExpiresAt <= ?
+              ORDER BY CASE priority
+                         WHEN 'urgent' THEN 0
+                         WHEN 'high'   THEN 1
+                         WHEN 'normal' THEN 2
+                         WHEN 'low'    THEN 3
+                         ELSE 4
+                       END ASC,
+                       enqueuedAt ASC
+              LIMIT 1
+           )
+           RETURNING *
+        `).get(workerId, now, leaseExpiresAt, now) as MergeQueueRow | undefined;
+      }
 
       if (!leased) {
         return null;
