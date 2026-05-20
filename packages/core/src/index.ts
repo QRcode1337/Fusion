@@ -129,6 +129,7 @@ export {
   SELF_DEFEATING_OPERATION_VERBS,
   detectSelfDefeatingDependency,
   SelfDefeatingDependencyError,
+  TaskDeletedError,
 } from "./store.js";
 export {
   STOPWORDS,

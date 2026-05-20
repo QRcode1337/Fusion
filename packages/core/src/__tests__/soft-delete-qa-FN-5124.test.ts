@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { TaskDeletedError } from "../store.js";
 import { createTaskStoreTestHarness } from "./store-test-helpers.js";
 
 describe("soft-delete QA boundary audit (FN-5124)", () => {
@@ -50,20 +51,20 @@ describe("soft-delete QA boundary audit (FN-5124)", () => {
     expect((store as any).findLiveDependents(parent.id)).toEqual([]);
   });
 
-  it("archiving a soft-deleted task succeeds and hard-removes the row consistently", async () => {
+  it("refuses archiving a soft-deleted task and preserves the deleted row", async () => {
     const store = harness.store();
     const doneTask = await store.createTask({ column: "done", title: "done task", description: "done task description" });
 
     await store.deleteTask(doneTask.id);
-    const archived = await store.archiveTask(doneTask.id);
+    await expect(store.archiveTask(doneTask.id)).rejects.toBeInstanceOf(TaskDeletedError);
 
     const liveRow = (store as any).db.prepare("SELECT id, deletedAt FROM tasks WHERE id = ?").get(doneTask.id) as
       | { id: string; deletedAt: string | null }
       | undefined;
 
-    expect(archived.column).toBe("archived");
-    expect(liveRow).toBeUndefined();
-    expect((store as any).archiveDb.get(doneTask.id)?.id).toBe(doneTask.id);
+    expect(liveRow).toMatchObject({ id: doneTask.id });
+    expect(typeof liveRow?.deletedAt).toBe("string");
+    expect((store as any).archiveDb.get(doneTask.id)).toBeUndefined();
   });
 
   it.each(["todo", "in-progress", "in-review", "done", "triage"])(

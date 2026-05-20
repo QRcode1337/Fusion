@@ -599,6 +599,16 @@ export class TaskHasDependentsError extends Error {
   }
 }
 
+export class TaskDeletedError extends Error {
+  constructor(
+    public readonly taskId: string,
+    public readonly deletedAt: string,
+  ) {
+    super(`Task ${taskId} is soft-deleted (deletedAt=${deletedAt}) and cannot be read or mutated`);
+    this.name = "TaskDeletedError";
+  }
+}
+
 export class TaskHasLineageChildrenError extends Error {
   readonly taskId: string;
   readonly childIds: string[];
@@ -2254,20 +2264,89 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     });
   }
 
+  private getTaskIdFromDir(dir: string): string {
+    const parts = dir.replace(/\\/g, "/").split("/");
+    return parts[parts.length - 1];
+  }
+
+  private insertRunAuditEventRow(input: Omit<RunAuditEventInput, "agentId" | "runId"> & { agentId?: string; runId?: string }): void {
+    const eventId = randomUUID();
+    const timestamp = input.timestamp ?? new Date().toISOString();
+    const agentId = input.agentId ?? "store";
+    const runId = input.runId ?? `store:${input.mutationType}:${input.taskId ?? input.target}:${eventId}`;
+    this.db.prepare(`
+      INSERT INTO runAuditEvents (
+        id, timestamp, taskId, agentId, runId, domain, mutationType, target, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      eventId,
+      timestamp,
+      input.taskId ?? null,
+      agentId,
+      runId,
+      input.domain,
+      input.mutationType,
+      input.target,
+      toJsonNullable(input.metadata),
+    );
+  }
+
+  private getSoftDeletedWriteConflict(id: string, task: Task): string | undefined {
+    const existing = this.readTaskFromDb(id, { includeDeleted: true });
+    if (!existing?.deletedAt || task.deletedAt !== undefined) {
+      return undefined;
+    }
+    return existing.deletedAt;
+  }
+
+  private throwSoftDeletedWriteBlocked(
+    id: string,
+    deletedAt: string,
+    operation: string,
+    auditInput?: {
+      agentId?: string;
+      runId?: string;
+      timestamp?: string;
+    },
+  ): never {
+    storeLog.warn(`[soft-delete-resurrection-blocked] refusing ${operation} for ${id}`, {
+      id,
+      deletedAt,
+      operation,
+    });
+    this.insertRunAuditEventRow({
+      taskId: id,
+      agentId: auditInput?.agentId,
+      runId: auditInput?.runId,
+      timestamp: auditInput?.timestamp,
+      domain: "database",
+      mutationType: "task:resurrection-blocked",
+      target: id,
+      metadata: {
+        id,
+        deletedAt,
+        operation,
+      },
+    });
+    throw new TaskDeletedError(id, deletedAt);
+  }
+
   /**
    * Read a task from SQLite by ID (extracted from dir path for backward compat).
-   * Falls back to file-based reading if not in DB.
+   * Falls back to file-based reading only when no DB row exists at all.
    */
   private async readTaskJson(dir: string): Promise<Task> {
-    // Extract task ID from directory path (handles both / and \ separators)
-    const parts = dir.replace(/\\/g, "/").split("/");
-    const id = parts[parts.length - 1];
-    
-    // Try SQLite first
+    const id = this.getTaskIdFromDir(dir);
+
     const task = this.readTaskFromDb(id);
     if (task) return task;
-    
-    // Fallback to file-based reading (for legacy compatibility)
+
+    const deletedTask = this.readTaskFromDb(id, { includeDeleted: true });
+    if (deletedTask?.deletedAt) {
+      throw new TaskDeletedError(id, deletedTask.deletedAt);
+    }
+
+    // Fallback to file-based reading (for legacy compatibility when no DB row exists).
     const filePath = join(dir, "task.json");
     const raw = await readFile(filePath, "utf-8");
     try {
@@ -2313,7 +2392,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * so duplicate IDs fail safely instead of overwriting existing rows.
    */
   private async atomicCreateTaskJson(dir: string, task: Task, operation: string): Promise<void> {
-    this.insertTaskWithFtsRecovery(task, operation);
+    const id = this.getTaskIdFromDir(dir);
+    let deletedAt: string | undefined;
+    this.db.transactionImmediate(() => {
+      deletedAt = this.getSoftDeletedWriteConflict(id, task);
+      if (deletedAt) return;
+      this.insertTaskWithFtsRecovery(task, operation);
+    });
+    if (deletedAt) {
+      this.throwSoftDeletedWriteBlocked(id, deletedAt, operation);
+    }
     await this.writeTaskJsonFile(dir, task);
   }
 
@@ -2322,7 +2410,18 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * for backward compatibility and debugging.
    */
   private async atomicWriteTaskJson(dir: string, task: Task): Promise<void> {
-    this.upsertTaskWithFtsRecovery(task);
+    const id = this.getTaskIdFromDir(dir);
+    let deletedAt: string | undefined;
+    this.db.transactionImmediate(() => {
+      // Soft-delete/restore state is written via direct SQL paths (deleteTask and
+      // future restore flows), so stale task.json upserts must never clear deletedAt.
+      deletedAt = this.getSoftDeletedWriteConflict(id, task);
+      if (deletedAt) return;
+      this.upsertTaskWithFtsRecovery(task);
+    });
+    if (deletedAt) {
+      this.throwSoftDeletedWriteBlocked(id, deletedAt, "atomicWriteTaskJson");
+    }
     // Also write to disk for backward compatibility
     await this.writeTaskJsonFile(dir, task);
   }
@@ -2340,31 +2439,27 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     task: Task,
     auditInput?: RunAuditEventInput,
   ): Promise<void> {
+    const id = this.getTaskIdFromDir(dir);
+    let deletedAt: string | undefined;
     this.db.transactionImmediate(() => {
+      deletedAt = this.getSoftDeletedWriteConflict(id, task);
+      if (deletedAt) return;
+
       // Upsert the task
       this.upsertTaskWithFtsRecovery(task);
 
       // Optionally record the audit event in the same transaction
       if (auditInput) {
-        const eventId = randomUUID();
-        const timestamp = auditInput.timestamp ?? new Date().toISOString();
-        this.db.prepare(`
-          INSERT INTO runAuditEvents (
-            id, timestamp, taskId, agentId, runId, domain, mutationType, target, metadata
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          eventId,
-          timestamp,
-          auditInput.taskId ?? null,
-          auditInput.agentId,
-          auditInput.runId,
-          auditInput.domain,
-          auditInput.mutationType,
-          auditInput.target,
-          toJsonNullable(auditInput.metadata),
-        );
+        this.insertRunAuditEventRow(auditInput);
       }
     });
+    if (deletedAt) {
+      this.throwSoftDeletedWriteBlocked(id, deletedAt, auditInput?.mutationType ?? "atomicWriteTaskJsonWithAudit", {
+        agentId: auditInput?.agentId,
+        runId: auditInput?.runId,
+        timestamp: auditInput?.timestamp,
+      });
+    }
 
     // File writes are not part of the SQLite transaction
     await this.writeTaskJsonFile(dir, task);
@@ -4392,6 +4487,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       } catch (error) {
         const archived = this.archiveDb.get(id);
         if (!archived) {
+          // Public API: propagate TaskDeletedError (and other typed failures)
+          // instead of silently treating soft-deleted live rows as missing.
           throw error;
         }
         task = this.archiveEntryToTask(archived, false);

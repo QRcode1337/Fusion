@@ -8,6 +8,7 @@ import type {
 } from "@fusion/core";
 import {
   DUPLICATE_OF_METADATA_KEY,
+  TaskDeletedError,
   buildTriageMemoryInstructions,
   getTaskDuplicateLineage,
   resolveAgentPrompt,
@@ -1558,6 +1559,10 @@ export class TriageProcessor {
       // and specifyTask(). The file is gone, so just log and skip — no point retrying.
       if ((err as Record<string, unknown>).code === "ENOENT") {
         planLog.log(`${task.id} no longer exists — skipping`);
+      } else if (err instanceof TaskDeletedError) {
+        planLog.log(`[triage] ${task.id}: skipping spec write — task soft-deleted`);
+        this.disposeSubagentsForTask(task.id, "task soft-deleted");
+        return;
       } else if (this.pauseAborted.has(task.id)) {
         // Pause (global or engine) — clear planning status without reporting an error
         this.pauseAborted.delete(task.id);
