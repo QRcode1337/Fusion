@@ -134,7 +134,7 @@ describe("useChatRooms", () => {
     renderHook(() => useChatRooms("proj-1"));
 
     await waitFor(() => {
-      expect(JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "[]")).toEqual(rooms);
+      expect(JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "{}").data).toEqual(rooms);
     });
   });
 
@@ -191,8 +191,8 @@ describe("useChatRooms", () => {
     const { result } = renderHook(() => useChatRooms("proj-1"));
     await waitFor(() => expect(result.current.roomsLoading).toBe(false));
 
-    const cached = JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "[]") as Array<Record<string, unknown>>;
-    expect(cached[0]).not.toHaveProperty("messages");
+    const cached = JSON.parse(window.localStorage.getItem(`${SWR_CACHE_KEYS.CHAT_ROOMS}:proj-1`) ?? "{}").data as Array<Record<string, unknown>>;
+    expect(cached?.[0]).not.toHaveProperty("messages");
   });
 
   it("handles room message SSE for active and inactive rooms", async () => {    const older = room("room-1", "one", "2026-05-09T01:00:00.000Z");

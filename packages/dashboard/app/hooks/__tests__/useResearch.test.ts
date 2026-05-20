@@ -67,8 +67,8 @@ describe("useResearch", () => {
       expect(result.current.availability.available).toBe(true);
     });
 
-    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX}p1`) ?? "[]");
-    expect(cached[0]?.id).toBe("RR-1");
+    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.RESEARCH_RUNS_PREFIX}p1`) ?? "{}").data;
+    expect(cached?.[0]?.id).toBe("RR-1");
   });
 
   it("isolates cache by project", async () => {

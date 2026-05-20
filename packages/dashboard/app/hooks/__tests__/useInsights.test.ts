@@ -187,8 +187,8 @@ describe("useInsights", () => {
       expect(architectureSection?.items).toHaveLength(1);
       expect(architectureSection?.items[0].id).toBe("INS-2");
 
-      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.INSIGHTS_PREFIX}project-1`) ?? "[]");
-      expect(cached[0]?.id).toBe("INS-1");
+      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.INSIGHTS_PREFIX}project-1`) ?? "{}").data;
+      expect(cached?.[0]?.id).toBe("INS-1");
       expect(cached).not.toHaveProperty("dismissStates");
     });
 
@@ -212,7 +212,7 @@ describe("useInsights", () => {
       renderHook(() => useInsights("project-1"));
 
       await waitFor(() => {
-        const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.INSIGHTS_PREFIX}project-1`) ?? "[]");
+        const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.INSIGHTS_PREFIX}project-1`) ?? "{}").data;
         expect(cached).toHaveLength(500);
       });
     });

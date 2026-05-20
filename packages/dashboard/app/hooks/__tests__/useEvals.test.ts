@@ -52,8 +52,8 @@ describe("useEvals", () => {
       expect(result.current.results[0]).toMatchObject({ id: "ER-1", runId: "RUN-1", taskId: "FN-1", taskTitle: "Task One" });
     });
 
-    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "[]");
-    expect(cached[0]?.id).toBe("ER-1");
+    const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "{}").data;
+    expect(cached?.[0]?.id).toBe("ER-1");
 
     act(() => result.current.setFilters((prev) => ({ ...prev, q: "fn-1", runId: "RUN-1", scoreMin: "0.5", scoreMax: "1" })));
 
@@ -85,7 +85,7 @@ describe("useEvals", () => {
     renderHook(() => useEvals({ projectId: "p1" }));
 
     await waitFor(() => {
-      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "[]");
+      const cached = JSON.parse(localStorage.getItem(`${SWR_CACHE_KEYS.EVALS_RESULTS_PREFIX}p1`) ?? "{}").data;
       expect(cached).toHaveLength(500);
     });
   });
