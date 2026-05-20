@@ -44,7 +44,6 @@ describe("FN-4733: self-healing chat cleanup maintenance", () => {
     const manager = new SelfHealingManager(store, { rootDir: tmpRoot, chatStore });
     vi.spyOn(manager as any, "pruneWorktrees").mockResolvedValue(undefined);
     vi.spyOn(manager as any, "cleanupOrphans").mockResolvedValue(undefined);
-    vi.spyOn(manager as any, "cleanupOrphanedBranches").mockResolvedValue(undefined);
     vi.spyOn(manager as any, "checkpointWal").mockReturnValue(undefined);
     vi.spyOn(manager as any, "enforceWorktreeCap").mockResolvedValue(undefined);
     vi.spyOn(manager, "archiveStaleDoneTasks").mockResolvedValue(0);

@@ -730,7 +730,6 @@ export const RemovalReason = {
   SelfHealingReclaim: "self-healing-reclaim",
   SelfHealingStaleActiveBranch: "self-healing-stale-active-branch",
   SelfHealingBranchConflict: "self-healing-branch-conflict",
-  SelfHealingOrphanRescue: "self-healing-orphan-rescue",
   SelfHealingIdleSweep: "self-healing-idle-sweep",
   PoolPrune: "pool-prune",
 } as const;

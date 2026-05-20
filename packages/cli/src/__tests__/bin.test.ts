@@ -29,7 +29,6 @@ const commandMocks = vi.hoisted(() => ({
   runTaskPlan: vi.fn(),
   runTaskDelete: vi.fn(),
   runTaskRetry: vi.fn(),
-  runTaskBranchRecovery: vi.fn(),
   runTaskComment: vi.fn(),
   runTaskComments: vi.fn(),
   runTaskSteer: vi.fn(),
@@ -134,7 +133,6 @@ vi.mock("../commands/task.js", () => ({
   runTaskPlan: commandMocks.runTaskPlan,
   runTaskDelete: commandMocks.runTaskDelete,
   runTaskRetry: commandMocks.runTaskRetry,
-  runTaskBranchRecovery: commandMocks.runTaskBranchRecovery,
   runTaskComment: commandMocks.runTaskComment,
   runTaskComments: commandMocks.runTaskComments,
   runTaskSteer: commandMocks.runTaskSteer,
@@ -402,28 +400,9 @@ describe("bin command routing and fallbacks", () => {
     expect(errorSpy).toHaveBeenCalledWith("Usage: fn task show <id>");
   });
 
-  it("routes task branch-recovery with reclaim/discard flags", async () => {
-    await runBin(["task", "branch-recovery", "FN-123", "--reclaim", "fusion/fn-123-2", "-P", "demo"]);
-    await runBin(["task", "branch-recovery", "FN-123", "--discard", "fusion/fn-123-2", "--yes", "-P", "demo"]);
 
-    expect(commandMocks.runTaskBranchRecovery).toHaveBeenNthCalledWith(1, "FN-123", {
-      reclaim: "fusion/fn-123-2",
-      discard: undefined,
-      yes: false,
-    }, "demo");
-    expect(commandMocks.runTaskBranchRecovery).toHaveBeenNthCalledWith(2, "FN-123", {
-      reclaim: undefined,
-      discard: "fusion/fn-123-2",
-      yes: true,
-    }, "demo");
-  });
 
-  it("errors for task branch-recovery missing id", async () => {
-    await expect(runBin(["task", "branch-recovery"])).rejects.toThrow("process.exit:1");
-    expect(errorSpy).toHaveBeenCalledWith(
-      "Usage: fn task branch-recovery <id> [--reclaim <branch>] [--discard <branch> --yes]",
-    );
-  });
+
 
   it("routes agent subcommands stop/start/import/mailbox", async () => {
     await runBin(["agent", "stop", "agent-1", "-P", "demo"]);

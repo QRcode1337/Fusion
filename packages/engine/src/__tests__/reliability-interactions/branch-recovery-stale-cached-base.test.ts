@@ -32,7 +32,7 @@ function createStore(): TaskStore & EventEmitter {
   return emitter;
 }
 
-describe("reliability interactions: branch recovery stale cached base", () => {
+describe("reliability interactions: stale cached-base branch reclaim", () => {
   let store: TaskStore & EventEmitter;
 
   beforeEach(() => {

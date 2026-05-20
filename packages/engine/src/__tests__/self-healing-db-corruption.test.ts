@@ -33,7 +33,6 @@ function createMockStore(overrides: Record<string, unknown> = {}): TaskStore & E
 const BATCH1_METHODS = [
   "pruneWorktrees",
   "cleanupOrphans",
-  "cleanupOrphanedBranches",
   "enforceWorktreeCap",
 ] as const;
 

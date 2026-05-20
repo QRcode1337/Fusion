@@ -16,14 +16,6 @@ export interface BranchCrossContaminationCommit extends BranchConflictCommit {
   foreignTaskId: string;
 }
 
-export interface BranchRecoveryCandidate {
-  branchName: string;
-  tipSha: string;
-  worktreePath: string | null;
-  strandedCommits: BranchConflictCommit[];
-  isCanonical: boolean;
-}
-
 export interface BranchConflictDetails {
   branchName: string;
   conflictingWorktreePath: string;
@@ -111,12 +103,6 @@ interface UniqueBranchCommitListResult {
   commits: BranchConflictCommit[];
   mainRef: string;
   degraded: boolean;
-}
-
-export interface ListBranchRecoveryCandidatesInput {
-  repoDir: string;
-  branchName: string;
-  startPoint?: string;
 }
 
 function quoteShellArg(value: string): string {
@@ -244,47 +230,6 @@ async function getWorktreeBranchMap(repoDir: string): Promise<Map<string, string
   return map;
 }
 
-function parseBranchNames(output: string): string[] {
-  return output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-export async function listBranchRecoveryCandidates(
-  input: ListBranchRecoveryCandidatesInput,
-): Promise<BranchRecoveryCandidate[]> {
-  const { repoDir, branchName } = input;
-  const startPoint = input.startPoint ?? "HEAD";
-  const [branchListOutput, worktreeBranches] = await Promise.all([
-    runGit(
-      repoDir,
-      `git for-each-ref --format='%(refname:short)' refs/heads/${branchName} refs/heads/${branchName}-*`,
-    ),
-    getWorktreeBranchMap(repoDir),
-  ]);
-
-  const candidates: BranchRecoveryCandidate[] = [];
-  for (const candidateName of parseBranchNames(branchListOutput)) {
-    const tipSha = await revParse(repoDir, candidateName);
-    const strandedCommits = await listStrandedCommits(repoDir, startPoint, candidateName);
-    candidates.push({
-      branchName: candidateName,
-      tipSha,
-      worktreePath: worktreeBranches.get(candidateName) ?? null,
-      strandedCommits,
-      isCanonical: candidateName === branchName,
-    });
-  }
-
-  candidates.sort((left, right) => {
-    if (left.branchName === branchName) return -1;
-    if (right.branchName === branchName) return 1;
-    return left.branchName.localeCompare(right.branchName);
-  });
-
-  return candidates;
-}
 
 interface TaskAttributionSummary {
   ownCount: number;
@@ -970,7 +915,7 @@ export async function inspectBranchConflict(
       existingTipSha,
       strandedCommits: uniqueCommitResult.commits,
       startPoint: uniqueCommitResult.mainRef,
-      recommendedAction: "Run branch recovery and explicitly choose whether to reclaim or discard prior work.",
+      recommendedAction: "Inspect/reclaim or discard the conflicting local branch/worktree with git tooling before retrying.",
     }),
   };
 }

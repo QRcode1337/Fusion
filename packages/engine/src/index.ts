@@ -127,13 +127,10 @@ export {
   classifyBootstrapMisbinding,
   isBranchConflictError,
   inspectBranchConflict,
-  listBranchRecoveryCandidates,
   type BranchConflictCommit,
   type BranchConflictDetails,
-  type BranchRecoveryCandidate,
   type BranchConflictInspectionResult,
   type InspectBranchConflictInput,
-  type ListBranchRecoveryCandidatesInput,
 } from "./branch-conflicts.js";
 export { generateReservedWorktreeName, generateWorktreeName, planTaskWorktreePath, slugify } from "./worktree-names.js";
 export { createLogger, type Logger } from "./logger.js";

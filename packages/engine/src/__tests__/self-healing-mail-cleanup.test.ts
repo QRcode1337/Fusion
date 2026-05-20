@@ -41,7 +41,6 @@ describe("FN-4743: self-healing mail cleanup maintenance", () => {
     });
     vi.spyOn(manager as any, "pruneWorktrees").mockResolvedValue(undefined);
     vi.spyOn(manager as any, "cleanupOrphans").mockResolvedValue(undefined);
-    vi.spyOn(manager as any, "cleanupOrphanedBranches").mockResolvedValue(undefined);
     vi.spyOn(manager as any, "checkpointWal").mockReturnValue(undefined);
     vi.spyOn(manager as any, "enforceWorktreeCap").mockResolvedValue(undefined);
     vi.spyOn(manager, "archiveStaleDoneTasks").mockResolvedValue(0);

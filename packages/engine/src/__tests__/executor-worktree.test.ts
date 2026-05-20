@@ -1634,7 +1634,7 @@ describe("TaskExecutor worktree recovery", () => {
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute(makeTask());
 
-    // Should have triggered cleanup (stale branch recovery)
+    // Should have triggered cleanup (stale branch reclaim)
     expect(mockedExecSync).toHaveBeenCalledWith(
       expect.stringContaining("git worktree prune"),
       expect.any(Object),

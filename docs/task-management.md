@@ -410,41 +410,11 @@ Recommended pattern:
 
 Do **not** patch `.fusion/fusion.db` directly without synchronizing `.fusion/tasks/*/task.json` through a supported store-backed path.
 
-## Branch conflict recovery
+## Branch conflict handling
 
-When the executor tries to allocate the canonical task branch (`fusion/<task-id>`) and finds that branch already checked out in another live worktree, Fusion now fails loudly by default instead of silently renaming the run onto `fusion/<task-id>-2`, `-3`, or similar sibling branches. See [CLI Reference → Branch conflict recovery](./cli-reference.md#branch-conflict-recovery) for the command reference and [Settings Reference → executorAllowSiblingBranchRename](./settings-reference.md#executorallowsiblingbranchrename) for the legacy opt-out setting.
+When executor branch allocation finds `fusion/<task-id>` already checked out elsewhere, Fusion fails loudly by default instead of silently renaming to sibling branches. The task is moved back to `todo` with `status: "failed"`, and logs include the conflicting worktree path, tip SHA, and stranded commits.
 
-1. **When this happens**
-
-   The executor refuses the branch allocation, moves the task from `in-progress` back to `todo`, sets `status: "failed"`, preserves the branch/worktree recovery metadata, and records the existing tip SHA plus stranded commit subjects in the task lifecycle log and structured agent log.
-
-2. **Inspect candidates**
-
-   Run the recovery command with no flags to list every matching canonical or sibling branch. The output includes the tip SHA, any attached worktree path, and patch-id-aware stranded commit subjects unique to the branch versus `main` (`git cherry`). Fully-subsumed branches now report no stranded commits.
-
-   ```bash
-   fn task branch-recovery FN-001
-   ```
-
-3. **Reclaim**
-
-   Reclaim points the task back at an existing canonical or sibling branch so the next executor run resumes there instead of allocating a new sibling. No commits are rewritten; Fusion only updates the task metadata.
-
-   ```bash
-   fn task branch-recovery FN-001 --reclaim fusion/fn-001-2
-   ```
-
-4. **Discard**
-
-   Discard deletes a stranded sibling branch and its worktree when you have confirmed the old work is no longer needed. `--yes` is mandatory because the action is destructive.
-
-   ```bash
-   fn task branch-recovery FN-001 --discard fusion/fn-001-2 --yes
-   ```
-
-5. **Opt-out / legacy mode**
-
-   If you must preserve the pre-FN-4068 behavior for a legacy workflow, enable [`executorAllowSiblingBranchRename`](./settings-reference.md#executorallowsiblingbranchrename). That restores silent suffixing onto sibling branches, but it is discouraged because it recreates the same hidden-work / data-loss pattern that motivated loud branch-conflict recovery in the first place.
+Fusion no longer provides a dedicated task-branch conflict CLI command. Resolve conflicting local branches/worktrees with standard git tooling, then retry the task. The legacy [`executorAllowSiblingBranchRename`](./settings-reference.md#executorallowsiblingbranchrename) setting still exists as an opt-in escape hatch for older workflows.
 
 ## Task Execution Modes
 

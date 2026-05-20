@@ -119,7 +119,7 @@ async function loadCommandHandlers() {
   const { runServe } = await import("./commands/serve.js");
   const { runDaemon } = await import("./commands/daemon.js");
   const { runDesktop } = await import("./commands/desktop.js");
-  const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskSetNode, runTaskClearNode, runTaskPrCreate, runTaskBranchRecovery } = await import("./commands/task.js");
+  const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskSetNode, runTaskClearNode, runTaskPrCreate } = await import("./commands/task.js");
   const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js");
   const { runSettingsExport } = await import("./commands/settings-export.js");
   const { runSettingsImport } = await import("./commands/settings-import.js");
@@ -166,7 +166,6 @@ async function loadCommandHandlers() {
     runTaskPlan,
     runTaskDelete,
     runTaskRetry,
-    runTaskBranchRecovery,
     runTaskComment,
     runTaskComments,
     runTaskSteer,
@@ -286,8 +285,6 @@ Usage:
   fn task set-node <id> <node-name-or-id>  Set a per-task node override
   fn task clear-node <id>                Clear a per-task node override
   fn task retry <id>                  Retry a failed task (clears error, moves to todo)
-  fn task branch-recovery <id> [--reclaim <branch>] [--discard <branch> --yes]
-                                      Inspect, reclaim, or discard stranded task branches
   fn task pr-create <id> [--title <title>] [--base <branch>] [--body <body>] [--draft] [--no-ai] [--reviewer <login>]
                          Alias of: fn pr create
   fn task import <owner/repo> [opts]  Import GitHub issues as tasks
@@ -569,7 +566,6 @@ async function main() {
     runTaskPlan,
     runTaskDelete,
     runTaskRetry,
-    runTaskBranchRecovery,
     runTaskComment,
     runTaskComments,
     runTaskSteer,
@@ -1220,20 +1216,6 @@ async function main() {
               process.exit(1);
             }
             await runTaskRetry(id, projectName);
-            break;
-          }
-          case "branch-recovery": {
-            const id = args[2];
-            if (!id) {
-              console.error("Usage: fn task branch-recovery <id> [--reclaim <branch>] [--discard <branch> --yes]");
-              process.exit(1);
-            }
-            const reclaimIdx = args.indexOf("--reclaim");
-            const discardIdx = args.indexOf("--discard");
-            const reclaim = reclaimIdx !== -1 && reclaimIdx + 1 < args.length ? args[reclaimIdx + 1] : undefined;
-            const discard = discardIdx !== -1 && discardIdx + 1 < args.length ? args[discardIdx + 1] : undefined;
-            const yes = args.includes("--yes");
-            await runTaskBranchRecovery(id, { reclaim, discard, yes }, projectName);
             break;
           }
           case "pr-create": {

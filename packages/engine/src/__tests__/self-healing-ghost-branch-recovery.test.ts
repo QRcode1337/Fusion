@@ -32,7 +32,7 @@ function createStore(): TaskStore & EventEmitter {
   return emitter;
 }
 
-describe("self-healing ghost branch recovery", () => {
+describe("self-healing ghost branch reclaim", () => {
   let store: TaskStore & EventEmitter;
   let manager: SelfHealingManager;
 

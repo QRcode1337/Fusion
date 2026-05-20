@@ -63,7 +63,6 @@ import {
   scanIdleWorktrees,
   cleanupOrphanedWorktrees,
   reapOrphanWorktrees,
-  scanOrphanedBranches,
 } from "../worktree-pool.js";
 import { BranchConflictError } from "../branch-conflicts.js";
 import * as branchConflictModule from "../branch-conflicts.js";
@@ -398,7 +397,7 @@ describe("WorktreePool", () => {
           existingTipSha: "abc123def456",
           strandedCommits: [{ sha: "aaa111", subject: "Foreign fix" }],
           startPoint: "main",
-          recommendedAction: "Run branch recovery",
+          recommendedAction: "Inspect/reclaim or discard the conflicting local branch/worktree with git tooling before retrying.",
         }),
       });
 
@@ -441,7 +440,7 @@ describe("WorktreePool", () => {
           existingTipSha: "abc123def456",
           strandedCommits: [{ sha: "aaa111", subject: "Foreign fix" }],
           startPoint: "fusion/fn-041",
-          recommendedAction: "Run branch recovery",
+          recommendedAction: "Inspect/reclaim or discard the conflicting local branch/worktree with git tooling before retrying.",
         }),
       });
 
@@ -477,7 +476,7 @@ describe("WorktreePool", () => {
           existingTipSha: "abc123def456",
           strandedCommits: [{ sha: "aaa111", subject: "Foreign fix" }],
           startPoint: "main",
-          recommendedAction: "Run branch recovery",
+          recommendedAction: "Inspect/reclaim or discard the conflicting local branch/worktree with git tooling before retrying.",
         }),
       });
 
@@ -556,7 +555,7 @@ describe("WorktreePool", () => {
           existingTipSha: "abc123def456",
           strandedCommits: [{ sha: "aaa111", subject: "Foreign fix" }],
           startPoint: "main",
-          recommendedAction: "Run branch recovery",
+          recommendedAction: "Inspect/reclaim or discard the conflicting local branch/worktree with git tooling before retrying.",
         }),
       });
 
@@ -1010,346 +1009,3 @@ describe("cleanupOrphanedWorktrees", () => {
   });
 });
 
-// ── scanOrphanedBranches tests ────────────────────────────────────────
-
-describe("scanOrphanedBranches", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Default: return empty string (no branches)
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "";
-      }
-      return Buffer.from("");
-    });
-  });
-
-  it("identifies branches not associated with any active task", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "  fusion/fn-001\n  fusion/fn-002\n  fusion/fn-003\n";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([
-      makeTask("FN-001", "in-progress"),
-      makeTask("FN-002", "todo"),
-    ]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-
-    expect(orphaned).toEqual(["fusion/fn-003"]);
-  });
-
-  it("excludes in-review and done tasks (merger manages those)", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "  fusion/fn-001\n  fusion/fn-002\n  fusion/fn-003\n";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([
-      makeTask("FN-001", "in-review"),
-      makeTask("FN-002", "done"),
-    ]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-
-    expect(orphaned).toContain("fusion/fn-001");
-    expect(orphaned).toContain("fusion/fn-002");
-    expect(orphaned).toContain("fusion/fn-003");
-  });
-
-  it("excludes archived tasks", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "  fusion/fn-001\n";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([
-      makeTask("FN-001", "archived"),
-    ]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-
-    expect(orphaned).toEqual(["fusion/fn-001"]);
-  });
-
-  it("uses task.branch field when set", async () => {
-    const task = makeTask("FN-001", "in-progress");
-    task.branch = "fusion/fn-001-custom";
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "  fusion/fn-001\n  fusion/fn-001-custom\n  fusion/fn-002\n";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([task]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-
-    expect(orphaned).toEqual(["fusion/fn-002"]);
-  });
-
-  it("returns empty array when git branch fails", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      if (typeof cmd === "string" && cmd.includes("git branch")) {
-        throw new Error("not a git repo");
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-    expect(orphaned).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[worktree-pool] Failed to list fusion/* branches: not a git repo"),
-    );
-  });
-
-  it("returns empty array when no fusion/* branches exist", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-    expect(orphaned).toEqual([]);
-  });
-
-  it("strips leading * and whitespace from branch names", async () => {
-    mockedExecSync.mockImplementation((cmd: any) => {
-      const cmdStr = String(cmd);
-      if (cmdStr.includes("git branch")) {
-        return "* fusion/fn-001\n  fusion/fn-002\n";
-      }
-      return Buffer.from("");
-    });
-
-    const store = createMockStore([]);
-
-    const orphaned = await scanOrphanedBranches("/root", store);
-
-    expect(orphaned).toContain("fusion/fn-001");
-    expect(orphaned).toContain("fusion/fn-002");
-  });
-});
-
-// ── reapOrphanWorktrees tests ─────────────────────────────────────────
-
-describe("reapOrphanWorktrees", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Default: .worktrees/ exists, lstatSync returns a real directory (not a symlink)
-    mockedExistsSync.mockReturnValue(true);
-    mockedLstatSync.mockReturnValue({ isDirectory: () => true, isSymbolicLink: () => false } as any);
-    mockedReaddirSync.mockReturnValue([]);
-    // Default: no registered worktrees
-    mockedExecSync.mockImplementation((cmd: any) => {
-      if (String(cmd) === "git worktree list --porcelain") {
-        return "worktree /root\nHEAD abc123\nbranch refs/heads/main\n\n" as any;
-      }
-      return Buffer.from("");
-    });
-  });
-
-  it("returns 0 when .worktrees/ does not exist", async () => {
-    mockedExistsSync.mockReturnValue(false);
-    const removed = await reapOrphanWorktrees("/root");
-    expect(removed).toBe(0);
-    expect(mockedRmSync).not.toHaveBeenCalled();
-  });
-
-  it("returns 0 when .worktrees/ is empty", async () => {
-    mockedReaddirSync.mockReturnValue([] as any);
-    const removed = await reapOrphanWorktrees("/root");
-    expect(removed).toBe(0);
-    expect(mockedRmSync).not.toHaveBeenCalled();
-  });
-
-  it("removes a directory that has no .git file and is not registered", async () => {
-    mockedReaddirSync.mockReturnValue([makeDirEntry("pale-raven")] as any);
-    // .gitkeep exists but NOT a .git file — simulate with existsSync returning false for .git
-    mockedExistsSync.mockImplementation((p: any) => {
-      if (String(p) === "/root/.worktrees") return true;
-      if (String(p).endsWith("/.git")) return false;
-      return true;
-    });
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    expect(removed).toBe(1);
-    expect(mockedRmSync).toHaveBeenCalledWith("/root/.worktrees/pale-raven", {
-      recursive: true,
-      force: true,
-    });
-    expect(mockedPruneWorktreeAdminEntries).toHaveBeenCalledWith(
-      expect.objectContaining({ reason: "pool-reap-orphan", target: "/root/.worktrees/pale-raven" }),
-    );
-  });
-
-  it("does NOT remove a directory that is a registered git worktree", async () => {
-    mockedReaddirSync.mockReturnValue([makeDirEntry("swift-falcon")] as any);
-    mockedExecSync.mockImplementation((cmd: any) => {
-      if (String(cmd) === "git worktree list --porcelain") {
-        return [
-          "worktree /root",
-          "HEAD abc123",
-          "branch refs/heads/main",
-          "",
-          "worktree /root/.worktrees/swift-falcon",
-          "HEAD def456",
-          "branch refs/heads/fusion/swift-falcon",
-          "",
-        ].join("\n") as any;
-      }
-      return Buffer.from("");
-    });
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    expect(removed).toBe(0);
-    expect(mockedRmSync).not.toHaveBeenCalled();
-  });
-
-  it("does NOT remove a directory that has a .git file (may be partially registered)", async () => {
-    mockedReaddirSync.mockReturnValue([makeDirEntry("amber-wolf")] as any);
-    mockedExistsSync.mockImplementation((p: any) => {
-      if (String(p) === "/root/.worktrees") return true;
-      if (String(p) === "/root/.worktrees/amber-wolf/.git") return true;
-      return true;
-    });
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    expect(removed).toBe(0);
-    expect(mockedRmSync).not.toHaveBeenCalled();
-  });
-
-  it("does NOT remove symlinks", async () => {
-    mockedReaddirSync.mockReturnValue([
-      { name: "linked-wt", isDirectory: () => true } as any,
-    ] as any);
-    mockedLstatSync.mockReturnValue({ isDirectory: () => true, isSymbolicLink: () => true } as any);
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    expect(removed).toBe(0);
-    expect(mockedRmSync).not.toHaveBeenCalled();
-  });
-
-  it("handles multiple orphans and multiple registered worktrees correctly", async () => {
-    mockedReaddirSync.mockReturnValue([
-      makeDirEntry("orphan-1"),
-      makeDirEntry("orphan-2"),
-      makeDirEntry("good-wt"),
-    ] as any);
-    mockedExecSync.mockImplementation((cmd: any) => {
-      if (String(cmd) === "git worktree list --porcelain") {
-        return [
-          "worktree /root",
-          "HEAD abc123",
-          "branch refs/heads/main",
-          "",
-          "worktree /root/.worktrees/good-wt",
-          "HEAD def456",
-          "branch refs/heads/fusion/good-wt",
-          "",
-        ].join("\n") as any;
-      }
-      return Buffer.from("");
-    });
-    mockedExistsSync.mockImplementation((p: any) => {
-      const ps = String(p);
-      if (ps === "/root/.worktrees") return true;
-      if (ps.endsWith("/.git")) return false;
-      return true;
-    });
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    expect(removed).toBe(2);
-    expect(mockedRmSync).toHaveBeenCalledWith("/root/.worktrees/orphan-1", {
-      recursive: true,
-      force: true,
-    });
-    expect(mockedRmSync).toHaveBeenCalledWith("/root/.worktrees/orphan-2", {
-      recursive: true,
-      force: true,
-    });
-    expect(mockedRmSync).not.toHaveBeenCalledWith(
-      expect.stringContaining("good-wt"),
-      expect.anything(),
-    );
-  });
-
-  it("continues and logs a warning when rmSync throws for one orphan", async () => {
-    mockedReaddirSync.mockReturnValue([
-      makeDirEntry("bad-orphan"),
-      makeDirEntry("good-orphan"),
-    ] as any);
-    mockedExistsSync.mockImplementation((p: any) => {
-      const ps = String(p);
-      if (ps === "/root/.worktrees") return true;
-      if (ps.endsWith("/.git")) return false;
-      return true;
-    });
-    let callCount = 0;
-    mockedRmSync.mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) throw new Error("permission denied");
-    });
-
-    const removed = await reapOrphanWorktrees("/root");
-
-    // Only the second one succeeds
-    expect(removed).toBe(1);
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("reapOrphanWorktrees: failed to remove bad-orphan"),
-    );
-  });
-
-  it("returns 0 and logs warning when git worktree list fails", async () => {
-    mockedReaddirSync.mockReturnValue([makeDirEntry("some-dir")] as any);
-    mockedExecSync.mockImplementation((cmd: any) => {
-      if (String(cmd) === "git worktree list --porcelain") {
-        throw new Error("not a git repo");
-      }
-      return Buffer.from("");
-    });
-    mockedExistsSync.mockImplementation((p: any) => {
-      const ps = String(p);
-      if (ps === "/root/.worktrees") return true;
-      if (ps.endsWith("/.git")) return false;
-      return true;
-    });
-
-    // When git list fails, getRegisteredWorktreePaths returns an empty Set,
-    // so any unregistered dir without a .git file would be reaped.
-    // In this test we verify behavior is safe: no crash, returns a count.
-    const removed = await reapOrphanWorktrees("/root");
-
-    // some-dir has no .git, not registered (empty set due to failure) — gets reaped
-    expect(removed).toBe(1);
-    // The warn from getRegisteredWorktreePaths should appear
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to list registered worktrees"),
-    );
-  });
-});

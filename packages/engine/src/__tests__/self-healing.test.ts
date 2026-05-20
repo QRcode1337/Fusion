@@ -66,13 +66,12 @@ vi.mock("../worktree-pool.js", () => ({
     SelfHealingReclaim: "self-healing-reclaim",
     SelfHealingStaleActiveBranch: "self-healing-stale-active-branch",
     SelfHealingBranchConflict: "self-healing-branch-conflict",
-    SelfHealingOrphanRescue: "self-healing-orphan-rescue",
     SelfHealingIdleSweep: "self-healing-idle-sweep",
     PoolPrune: "pool-prune",
   },
   scanIdleWorktrees: vi.fn().mockResolvedValue([]),
-  cleanupOrphanedWorktrees: vi.fn().mockResolvedValue(0),
   scanOrphanedBranches: vi.fn().mockResolvedValue([]),
+  cleanupOrphanedWorktrees: vi.fn().mockResolvedValue(0),
   isUsableTaskWorktree: vi.fn().mockResolvedValue(true),
   removeWorktree: vi.fn().mockResolvedValue(undefined),
   resolveWorktreeBackend: vi.fn(),
@@ -111,11 +110,11 @@ import { classifyOwnedLandedEvidence } from "../merger.js";
 
 const mockedExecSync = vi.mocked(execSync);
 const mockedExistsSync = vi.mocked(existsSync);
-const mockedScanOrphanedBranches = vi.mocked(scanOrphanedBranches);
 const mockedIsUsableTaskWorktree = vi.mocked(isUsableTaskWorktree);
 const mockedRemoveWorktree = vi.mocked(removeWorktree);
 const mockedResolveWorktreeBackend = vi.mocked(resolveWorktreeBackend);
 const mockedScanIdleWorktrees = vi.mocked(scanIdleWorktrees);
+const mockedScanOrphanedBranches = vi.mocked(scanOrphanedBranches);
 const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedCreateLogger = vi.mocked(createLogger);
 const mockedClassifyOwnedLandedEvidence = vi.mocked(classifyOwnedLandedEvidence);
@@ -1363,73 +1362,6 @@ describe("SelfHealingManager", () => {
 
       mockedExecSync.mockClear();
       mockedExistsSync.mockReset();
-    });
-  });
-
-  // ── cleanupOrphanedBranches ────────────────────────────────────────
-
-  describe("cleanupOrphanedBranches", () => {
-    it("returns 0 when no orphaned branches found", async () => {
-      mockedScanOrphanedBranches.mockResolvedValueOnce([]);
-
-      const result = await manager.cleanupOrphanedBranches();
-
-      expect(result).toBe(0);
-      expect(mockedExecSync).not.toHaveBeenCalled();
-    });
-
-    it("deletes only subsumed orphaned branches with safe delete (-d)", async () => {
-      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-001", "fusion/fn-002"]);
-      vi.spyOn(manager as any, "inspectOrphanedBranch")
-        .mockResolvedValueOnce({ branch: "fusion/fn-001", tipSha: "abc", uniqueCommitCount: 0, uniqueCommitSubjects: [], derivedTaskId: "FN-001", registeredWorktreePath: null })
-        .mockResolvedValueOnce({ branch: "fusion/fn-002", tipSha: "def", uniqueCommitCount: 0, uniqueCommitSubjects: [], derivedTaskId: "FN-002", registeredWorktreePath: null });
-
-      const result = await manager.cleanupOrphanedBranches();
-
-      expect(result).toBe(2);
-      expect(mockedExecSync).toHaveBeenCalledWith(
-        expect.stringContaining("git branch -d 'fusion/fn-001'"),
-        expect.objectContaining({ cwd: "/tmp/test-project" }),
-      );
-      expect(mockedExecSync).toHaveBeenCalledWith(
-        expect.stringContaining("git branch -d 'fusion/fn-002'"),
-        expect.objectContaining({ cwd: "/tmp/test-project" }),
-      );
-    });
-
-    it("does not force-delete unique-commit orphaned branches", async () => {
-      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-003"]);
-      vi.spyOn(manager as any, "inspectOrphanedBranch")
-        .mockResolvedValueOnce({ branch: "fusion/fn-003", tipSha: "abc", uniqueCommitCount: 2, uniqueCommitSubjects: ["feat: keep"], derivedTaskId: "FN-003", registeredWorktreePath: null });
-
-      const result = await manager.cleanupOrphanedBranches();
-
-      expect(result).toBe(0);
-      expect(mockedExecSync).not.toHaveBeenCalledWith(
-        expect.stringContaining('git branch -D "fusion/fn-003"'),
-        expect.any(Object),
-      );
-    });
-
-    it("counts only successfully pruned subsumed branches", async () => {
-      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-004", "fusion/fn-005"]);
-      vi.spyOn(manager as any, "inspectOrphanedBranch")
-        .mockResolvedValueOnce({ branch: "fusion/fn-004", tipSha: "abc", uniqueCommitCount: 0, uniqueCommitSubjects: [], derivedTaskId: "FN-004", registeredWorktreePath: null })
-        .mockResolvedValueOnce({ branch: "fusion/fn-005", tipSha: "def", uniqueCommitCount: 1, uniqueCommitSubjects: ["feat"], derivedTaskId: "FN-005", registeredWorktreePath: null });
-      mockedExecSync.mockReset();
-      mockedExecSync.mockImplementation(() => Buffer.from(""));
-
-      const result = await manager.cleanupOrphanedBranches();
-
-      expect(result).toBe(1);
-    });
-
-    it("returns 0 when scanOrphanedBranches throws", async () => {
-      mockedScanOrphanedBranches.mockRejectedValueOnce(new Error("git error"));
-
-      const result = await manager.cleanupOrphanedBranches();
-
-      expect(result).toBe(0);
     });
   });
 
@@ -7137,6 +7069,55 @@ describe("worktrunk-aware cleanup sweeps", () => {
   });
 });
 
+describe("cleanupOrphanedBranches", () => {
+  let store: TaskStore & EventEmitter;
+  let manager: SelfHealingManager;
+
+  beforeEach(() => {
+    store = createMockStore({
+      clearStaleExecutionStartBranchReferences: vi.fn().mockReturnValue([]),
+    });
+    manager = new SelfHealingManager(store, { rootDir: "/tmp/test-project" });
+    mockedScanOrphanedBranches.mockReset();
+    mockedExecSync.mockReset();
+  });
+
+  afterEach(() => {
+    manager.stop();
+  });
+
+  it("prunes subsumed orphan branches and emits branch:orphan-prune", async () => {
+    mockedScanOrphanedBranches.mockResolvedValue(["fusion/FN-777"]);
+    mockedExecSync.mockImplementation((command: string) => {
+      if (command.startsWith("git rev-parse --verify")) return "abc123\n" as any;
+      if (command.startsWith("git rev-list --count")) return "0\n" as any;
+      if (command.startsWith("git branch -d")) return "" as any;
+      return "" as any;
+    });
+
+    const result = await (manager as any).cleanupOrphanedBranches();
+
+    expect(result).toBe(1);
+    expect(mockedExecSync).toHaveBeenCalledWith(expect.stringContaining("git branch -d"), expect.anything());
+    expect(vi.mocked(store.recordRunAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({ mutationType: "branch:orphan-prune" }));
+  });
+
+  it("leaves unique-commit orphan branches untouched", async () => {
+    mockedScanOrphanedBranches.mockResolvedValue(["fusion/FN-888"]);
+    mockedExecSync.mockImplementation((command: string) => {
+      if (command.startsWith("git rev-parse --verify")) return "def456\n" as any;
+      if (command.startsWith("git rev-list --count")) return "2\n" as any;
+      return "" as any;
+    });
+
+    const result = await (manager as any).cleanupOrphanedBranches();
+
+    expect(result).toBe(0);
+    expect(mockedExecSync).not.toHaveBeenCalledWith(expect.stringContaining("git branch -d"), expect.anything());
+    expect(vi.mocked(store.createTask)).not.toHaveBeenCalled();
+  });
+});
+
 describe("maintenance cycle concurrency", () => {
   let store: TaskStore & EventEmitter;
   let manager: SelfHealingManager;
@@ -7202,7 +7183,6 @@ describe("maintenance cycle concurrency", () => {
   it("resets maintenanceRunning flag on success", async () => {
     (vi.spyOn(manager as any, "pruneWorktrees").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "cleanupOrphans").mockResolvedValue(0) as any);
-    (vi.spyOn(manager as any, "cleanupOrphanedBranches").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "enforceWorktreeCap").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "recoverCompletedTasks").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "recoverStaleIncompleteReviewTasks").mockResolvedValue(0) as any);
@@ -7228,7 +7208,6 @@ describe("maintenance cycle concurrency", () => {
   it("uses a passive WAL checkpoint during maintenance", async () => {
     (vi.spyOn(manager as any, "pruneWorktrees").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "cleanupOrphans").mockResolvedValue(0) as any);
-    (vi.spyOn(manager as any, "cleanupOrphanedBranches").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "enforceWorktreeCap").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "recoverCompletedTasks").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "recoverStaleIncompleteReviewTasks").mockResolvedValue(0) as any);
@@ -7268,7 +7247,6 @@ describe("maintenance cycle concurrency", () => {
 
     makeSlow("pruneWorktrees");
     makeSlow("cleanupOrphans");
-    makeSlow("cleanupOrphanedBranches");
     makeSlow("enforceWorktreeCap");
     // checkpointWal is synchronous, no need to mock
 
@@ -7281,7 +7259,6 @@ describe("maintenance cycle concurrency", () => {
     // All operations should have run
     expect(executionOrder).toContain("pruneWorktrees");
     expect(executionOrder).toContain("cleanupOrphans");
-    expect(executionOrder).toContain("cleanupOrphanedBranches");
     expect(executionOrder).toContain("enforceWorktreeCap");
   });
 
@@ -7362,7 +7339,6 @@ describe("maintenance cycle concurrency", () => {
     // Mock batch 1 and 3 as well
     (vi.spyOn(manager as any, "pruneWorktrees").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "cleanupOrphans").mockResolvedValue(0) as any);
-    (vi.spyOn(manager as any, "cleanupOrphanedBranches").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "enforceWorktreeCap").mockResolvedValue(0) as any);
     (vi.spyOn(manager as any, "archiveStaleDoneTasks").mockResolvedValue(0) as any);
 

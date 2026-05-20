@@ -7821,7 +7821,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
     const strandedSummary = error.strandedCommits.length > 0
       ? error.strandedCommits.map((commit) => `${commit.sha.slice(0, 12)} ${commit.subject}`).join("; ")
       : "none";
-    const recommendation = `Run \`fn task branch-recovery ${taskId}\` to inspect candidates, then reclaim the existing branch or discard prior work explicitly.`;
+    const recommendation = "Resolve the local branch/worktree conflict with git tooling (inspect/reclaim or discard) before retrying.";
     return [
       `Branch conflict: ${error.branchName} is already checked out at ${error.conflictingWorktreePath}`,
       `Existing tip: ${error.existingTipSha}`,
@@ -7845,7 +7845,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
       lines.push("stranded=none");
     }
     lines.push(
-      `recommendation=Run 'fn task branch-recovery ${taskId}' to inspect candidates, then reclaim the existing branch or discard prior work explicitly.`,
+      `recommendation=Resolve the local branch/worktree conflict with git tooling (inspect/reclaim or discard) before retrying.`,
     );
     return lines.join("\n");
   }
@@ -8023,7 +8023,7 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
     }
 
     const conflictMessage = `Task branch conflict: ${error.branchName} is already checked out at ${error.conflictingWorktreePath}. ` +
-      `Run 'fn task branch-recovery ${task.id}' to inspect candidates, then reclaim the existing branch or discard prior work explicitly.`;
+      `Resolve the local branch/worktree conflict with git tooling (inspect/reclaim or discard) before retrying.`;
     await this.store.logEntry(task.id, this.formatBranchConflictLifecycleLog(task.id, error), undefined, this.getRunContextFor(task.id));
     await this.store.appendAgentLog(task.id, "Branch conflict recovery required", "tool_error", this.formatBranchConflictAgentLog(task.id, error), "executor");
     const autoRecoveryDispatcher = this.getAutoRecoveryDispatcher(createRunAuditor(this.store, this.getRunContextFor(task.id)));

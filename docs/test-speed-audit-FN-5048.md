@@ -45,7 +45,7 @@
 | 3 | `src/__tests__/merger-diff-volume-gate.test.ts` | 13.96s | integration + gate logic | keep | Keep. |
 | 4 | `src/__tests__/self-healing-already-merged.real-git.test.ts` | 10.21s | real-git recovery | keep | Keep. |
 | 5 | `src/__tests__/merger-autostash-cleanup.test.ts` | 9.79s | sweep* paths | keep | Keep. |
-| 6 | `src/__tests__/branch-conflicts-recovery.test.ts` | 9.39s | branch recovery classification | keep | Keep. |
+| 6 | `src/__tests__/branch-conflicts-recovery.test.ts` | 9.39s | branch conflict classification | keep | Keep. |
 | 7 | `src/__tests__/merger-autostash-orphan-surface.test.ts` | 8.11s | autostash orphan surface | keep | Keep. |
 | 8 | `src/__tests__/merger-squash-audit.test.ts` | 7.66s | squash audit | keep | Keep. |
 | 9 | `src/__tests__/self-healing-stale-merge-stats.real-git.test.ts` | 7.01s | merge metadata recovery | keep | Keep. |

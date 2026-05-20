@@ -47,7 +47,6 @@ import {
   BranchCrossContaminationError,
   assertCleanBranchAtBase,
   inspectBranchConflict,
-  listBranchRecoveryCandidates,
   listUniqueBranchCommits,
 } from "../branch-conflicts.js";
 
@@ -307,7 +306,7 @@ describe("branch-conflicts", () => {
     }
     expect(result.error).toBeInstanceOf(BranchConflictError);
     expect(result.error.message).toContain("1 stranded commit since main");
-    expect(result.error.message).toContain("Run branch recovery");
+    expect(result.error.message).toContain("Inspect/reclaim or discard the conflicting local branch/worktree");
   });
 
   it("lists zero unique commits when git cherry has no plus entries", async () => {
@@ -429,67 +428,5 @@ describe("branch-conflicts", () => {
     await expect(assertion).resolves.toBeUndefined();
   });
 
-  it("lists canonical and sibling recovery candidates with worktrees and stranded commits", async () => {
-    mockedExecSync.mockImplementation((cmd: string | string[]) => {
-      const command = typeof cmd === "string" ? cmd : cmd[0];
-      if (command === "git for-each-ref --format='%(refname:short)' refs/heads/fusion/fn-4068 refs/heads/fusion/fn-4068-*") {
-        return Buffer.from("fusion/fn-4068\nfusion/fn-4068-2\n");
-      }
-      if (command === "git worktree list --porcelain") {
-        return Buffer.from([
-          "worktree /tmp/repo",
-          "HEAD 1111111",
-          "branch refs/heads/main",
-          "",
-          "worktree /tmp/fn-4068",
-          "HEAD 2222222",
-          "branch refs/heads/fusion/fn-4068",
-          "",
-          "worktree /tmp/fn-4068-2",
-          "HEAD 3333333",
-          "branch refs/heads/fusion/fn-4068-2",
-          "",
-        ].join("\n"));
-      }
-      if (command.includes("git rev-parse --verify 'fusion/fn-4068^{commit}'")) {
-        return Buffer.from("abc123\n");
-      }
-      if (command.includes("git rev-parse --verify 'fusion/fn-4068-2^{commit}'")) {
-        return Buffer.from("def456\n");
-      }
-      if (command.includes("git log --reverse --format=%H%x09%s 'main..fusion/fn-4068'")) {
-        return Buffer.from("aaa111\tCanonical fix\n");
-      }
-      if (command.includes("git log --reverse --format=%H%x09%s 'main..fusion/fn-4068-2'")) {
-        return Buffer.from("bbb222\tSibling patch\nccc333\tMore work\n");
-      }
-      throw new Error(`Unexpected command: ${command}`);
-    });
 
-    const result = await listBranchRecoveryCandidates({
-      repoDir: "/tmp/repo",
-      branchName: "fusion/fn-4068",
-      startPoint: "main",
-    });
-
-    expect(result).toEqual([
-      {
-        branchName: "fusion/fn-4068",
-        tipSha: "abc123",
-        worktreePath: "/tmp/fn-4068",
-        strandedCommits: [{ sha: "aaa111", subject: "Canonical fix" }],
-        isCanonical: true,
-      },
-      {
-        branchName: "fusion/fn-4068-2",
-        tipSha: "def456",
-        worktreePath: "/tmp/fn-4068-2",
-        strandedCommits: [
-          { sha: "bbb222", subject: "Sibling patch" },
-          { sha: "ccc333", subject: "More work" },
-        ],
-        isCanonical: false,
-      },
-    ]);
-  });
 });

@@ -3,12 +3,11 @@ import { EventEmitter } from "node:events";
 import type { RunAuditEventInput, Settings, TaskStore } from "@fusion/core";
 import { SelfHealingManager } from "../../self-healing.js";
 
-const { execSpy, execSyncSpy, resolveBackendSpy, scanIdleSpy, scanOrphanedBranchesSpy, readdirSpy, existsSpy, inspectBranchConflictSpy } = vi.hoisted(() => ({
+const { execSpy, execSyncSpy, resolveBackendSpy, scanIdleSpy, readdirSpy, existsSpy, inspectBranchConflictSpy } = vi.hoisted(() => ({
   execSpy: vi.fn(),
   execSyncSpy: vi.fn(),
   resolveBackendSpy: vi.fn(),
   scanIdleSpy: vi.fn(),
-  scanOrphanedBranchesSpy: vi.fn().mockResolvedValue([]),
   readdirSpy: vi.fn(),
   existsSpy: vi.fn().mockReturnValue(false),
   inspectBranchConflictSpy: vi.fn(),
@@ -38,7 +37,6 @@ vi.mock("../../worktree-pool.js", async () => {
     ...actual,
     resolveWorktreeBackend: resolveBackendSpy,
     scanIdleWorktrees: scanIdleSpy,
-    scanOrphanedBranches: scanOrphanedBranchesSpy,
     isUsableTaskWorktree: vi.fn().mockResolvedValue(true),
   };
 });
@@ -93,8 +91,6 @@ describe("reliability interactions: worktrunk x self-healing", () => {
     execSyncSpy.mockReset();
     resolveBackendSpy.mockReset();
     scanIdleSpy.mockReset();
-    scanOrphanedBranchesSpy.mockReset();
-    scanOrphanedBranchesSpy.mockResolvedValue([]);
     readdirSpy.mockReset();
     existsSpy.mockReset();
     existsSpy.mockReturnValue(false);
