@@ -1967,15 +1967,24 @@ describe("PATCH /tasks/:id", () => {
       id: "KB-001",
       githubTracking: { enabled: true, repoOverride: "runfusion/fusion" },
     });
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ...FAKE_TASK_DETAIL,
-      id: "KB-001",
-      githubTracking: {
-        enabled: true,
-        repoOverride: "runfusion/fusion",
-        issue: { owner: "runfusion", repo: "fusion", number: 73, url: "https://github.com/runfusion/fusion/issues/73", createdAt: "2026-01-01T00:00:00.000Z" },
-      },
-    });
+    // First getTask (inside createTrackingIssueForTask) returns the task
+    // pre-issue. Subsequent getTask (route refresh after creation) returns
+    // the task with the linked issue so the response body reflects it.
+    (store.getTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        ...FAKE_TASK_DETAIL,
+        id: "KB-001",
+        githubTracking: { enabled: true, repoOverride: "runfusion/fusion" },
+      })
+      .mockResolvedValue({
+        ...FAKE_TASK_DETAIL,
+        id: "KB-001",
+        githubTracking: {
+          enabled: true,
+          repoOverride: "runfusion/fusion",
+          issue: { owner: "runfusion", repo: "fusion", number: 73, url: "https://github.com/runfusion/fusion/issues/73", createdAt: "2026-01-01T00:00:00.000Z" },
+        },
+      });
 
     const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({
       githubTracking: {
@@ -2166,16 +2175,25 @@ describe("PATCH /tasks/:id", () => {
       title: "Retitled",
       githubTracking: { enabled: true, repoOverride: "runfusion/fusion" },
     });
-    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ...FAKE_TASK_DETAIL,
-      id: "KB-001",
-      title: "Retitled",
-      githubTracking: {
-        enabled: true,
-        repoOverride: "runfusion/fusion",
-        issue: { owner: "runfusion", repo: "fusion", number: 101, url: "https://github.com/runfusion/fusion/issues/101", createdAt: "2026-01-01T00:00:00.000Z" },
-      },
-    });
+    // First getTask (inside createTrackingIssueForTask) returns the task
+    // pre-issue. Subsequent getTask (route refresh) returns the linked state.
+    (store.getTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        ...FAKE_TASK_DETAIL,
+        id: "KB-001",
+        title: "Retitled",
+        githubTracking: { enabled: true, repoOverride: "runfusion/fusion" },
+      })
+      .mockResolvedValue({
+        ...FAKE_TASK_DETAIL,
+        id: "KB-001",
+        title: "Retitled",
+        githubTracking: {
+          enabled: true,
+          repoOverride: "runfusion/fusion",
+          issue: { owner: "runfusion", repo: "fusion", number: 101, url: "https://github.com/runfusion/fusion/issues/101", createdAt: "2026-01-01T00:00:00.000Z" },
+        },
+      });
 
     const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({ title: "Retitled" }), {
       "Content-Type": "application/json",
