@@ -1502,9 +1502,9 @@ describe("AgentsView", () => {
       clientWidthSpy.mockRestore();
     });
 
-    // Skipped: mobile zoom controls expect an agent-org-chart-canvas--zoom-100
-    // class that isn't yet rendered by AgentsView. Tracked alongside the
-    // org-chart sizing feature work.
+    // Skipped: mobile zoom controls expect agent-org-chart-canvas--zoom-100
+    // initially but the canvas starts at scale != 1 in tests. Re-enable once
+    // initial scale is normalized.
     it.skip("shows mobile zoom controls for org chart and keeps node selection working", async () => {
       mockViewportMode.mockReturnValue("mobile");
       mockFetchOrgTree.mockResolvedValue(orgTree);

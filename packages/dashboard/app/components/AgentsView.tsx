@@ -1347,7 +1347,7 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs, agentOnboardin
                 >
                   <div
                     ref={orgChartCanvasRef}
-                    className="agent-org-chart-canvas"
+                    className={`agent-org-chart-canvas agent-org-chart-canvas--zoom-${Math.round((orgChartTransform.scale ?? 1) * 100)}`}
                     data-panning={isOrgChartPanning ? "true" : "false"}
                     style={{ transform: `translate(${orgChartTransform.x}px, ${orgChartTransform.y}px) scale(${orgChartTransform.scale})` }}
                   >
