@@ -1319,12 +1319,15 @@ export class Database {
       this.db.exec(`PRAGMA busy_timeout = ${this.busyTimeoutMs}`);
       // Enable WAL mode for concurrent reader/writer access
       this.db.exec("PRAGMA journal_mode = WAL");
-      // In WAL mode NORMAL is nearly as durable as FULL with much lower fsync cost.
-      this.db.exec("PRAGMA synchronous = NORMAL");
-      // Checkpoint every 100 pages (~400 KB) to keep WAL small and reduce
-      // corruption risk. More aggressive than the default 1000, but paired
-      // with journal_size_limit to prevent WAL bloat.
-      this.db.exec("PRAGMA wal_autocheckpoint = 100");
+      // FULL fsyncs on every commit. Slightly slower than NORMAL, but the only
+      // setting that survives a process crash mid-checkpoint without torn pages
+      // — repeated node:sqlite SIGSEGVs inside pager_write have corrupted this
+      // db before.
+      this.db.exec("PRAGMA synchronous = FULL");
+      // Default (1000) checkpoint cadence. The previous value of 100 made the
+      // db spend most of its life mid-checkpoint, multiplying corruption risk
+      // when a writer crashed. journal_size_limit below still caps WAL growth.
+      this.db.exec("PRAGMA wal_autocheckpoint = 1000");
       // Bound WAL growth between checkpoints/maintenance cycles.
       this.db.exec("PRAGMA journal_size_limit = 4194304");
     } else {
