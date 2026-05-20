@@ -395,9 +395,10 @@ export async function acquireReuseHandoff(input: ReuseHandoffInput): Promise<Han
     // Non-atomic fallback: executor lease checks above race with mergeQueue lease acquisition.
     // TaskStore does not yet expose an atomic executor-lease absence check inside mergeQueue leasing.
     lease = (input.store as TaskStore & {
-      acquireMergeQueueLease(workerId: string, opts: { leaseDurationMs: number; now?: string }): unknown;
+      acquireMergeQueueLease(workerId: string, opts: { leaseDurationMs: number; now?: string; targetTaskId?: string }): unknown;
     }).acquireMergeQueueLease(MERGE_HANDOFF_WORKER_ID, {
       leaseDurationMs: 15 * 60 * 1000,
+      targetTaskId: input.task.id,
     });
   } catch (error) {
     if (error instanceof PoolDoubleLeaseError) {
@@ -412,10 +413,11 @@ export async function acquireReuseHandoff(input: ReuseHandoffInput): Promise<Han
     }
     throw error;
   }
-  if (!lease || typeof lease !== "object" || (lease as { taskId?: string }).taskId !== input.task.id) {
+  if (!lease || !("taskId" in lease) || lease.taskId !== input.task.id) {
     throw new MergeHandoffRefusedError("lease-handoff-failed", "no-lease", {
       taskId: input.task.id,
       worktreePath,
+      acquiredTaskId: lease && "taskId" in lease ? lease.taskId : null,
     });
   }
 
