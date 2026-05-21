@@ -109,8 +109,10 @@ import {
 } from "./merger-integration-worktree.js";
 import { acquireTaskWorktree } from "./worktree-acquisition.js";
 import { resolveIntegrationBranch } from "./integration-branch.js";
+import { advanceIntegrationBranchRef, IntegrationBranchConcurrentAdvanceError } from "./merger-ref-update-advance.js";
 
 export { DiffVolumeRegressionError } from "./merger-diff-volume-gate.js";
+export { IntegrationBranchConcurrentAdvanceError } from "./merger-ref-update-advance.js";
 
 /** Conflict type classification for merge conflict resolution */
 export type ConflictType =
@@ -8895,15 +8897,13 @@ export async function aiMergeTask(
     mergerLog.warn(`${taskId}: failed to collect/store merge details: ${err.message}`);
   }
 
-  // 5c. Apply squash commit to the project root's local integration branch
-  // (FN-5279). In reuse-task-worktree mode step 3b detached HEAD in the task
-  // worktree, so the squash commit landed on a detached HEAD and the local
-  // integration branch ref in the project root still points at the pre-merge
-  // tip. Advance it now via `git merge --ff-only` so the changes are
-  // actually applied to local main. If main has diverged in the meantime
-  // (rare — merge queue lease should prevent concurrent advances), fall back
-  // to a regular merge and let the existing AI conflict resolution helper
-  // resolve any conflicts.
+  // 5c. Advance integration branch ref after squash
+  // FN-5350 invariant: the integration branch is assumed checked out in
+  // projectRootDir with possibly dirty + untracked files. Advance refs/heads/<integration>
+  // via `git update-ref` only — NEVER `git checkout` / `git merge` / `git rebase`
+  // in projectRootDir. Compare-and-swap (expectedCurrentSha → newSha) preserves
+  // the FN concurrent-advance rule: if integration moved, we refuse and let
+  // upstream re-rebase machinery (FN-4500 / FN-5083 rebind / standard re-execution) recover.
   if (reuseTaskWorktreeMerge) {
     try {
       const worktreeHeadSha = execSyncText("git rev-parse HEAD", {
@@ -8912,122 +8912,48 @@ export async function aiMergeTask(
         encoding: "utf-8",
       }).trim();
       if (worktreeHeadSha) {
-        const integrationBranch = mergeTarget.branch;
-        try {
-          await execAsync(`git merge --ff-only ${quoteArg(worktreeHeadSha)}`, {
-            cwd: projectRootDir,
-            encoding: "utf-8",
-            timeout: 60_000,
-          });
-          await (audit as any).git({
-            type: "merge:reuse-integration-branch-advanced",
-            target: integrationBranch,
-            metadata: { taskId, sha: worktreeHeadSha, via: "ff-merge", projectRootDir },
-          });
-          mergerLog.log(
-            `${taskId}: applied squash ${worktreeHeadSha.slice(0, 8)} to ${integrationBranch} in project root (ff-merge)`,
-          );
-        } catch (ffErr: unknown) {
-          const ffMsg = ffErr instanceof Error ? ffErr.message : String(ffErr);
-          mergerLog.warn(
-            `${taskId}: ff-merge of ${worktreeHeadSha.slice(0, 8)} into ${integrationBranch} failed (${ffMsg}); attempting non-ff merge with AI conflict resolution`,
-          );
-          try {
-            await execAsync(`git merge --no-edit ${quoteArg(worktreeHeadSha)}`, {
-              cwd: projectRootDir,
-              encoding: "utf-8",
-              timeout: 120_000,
-            });
-            await (audit as any).git({
-              type: "merge:reuse-integration-branch-advanced",
-              target: integrationBranch,
-              metadata: { taskId, sha: worktreeHeadSha, via: "non-ff-merge", projectRootDir },
-            });
-            mergerLog.log(
-              `${taskId}: applied squash ${worktreeHeadSha.slice(0, 8)} to ${integrationBranch} in project root (non-ff merge, no conflicts)`,
-            );
-          } catch (mergeErr: unknown) {
-            const mergeMsg = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
-            const conflicted = await getConflictedFiles(projectRootDir).catch(() => [] as string[]);
-            if (conflicted.length === 0) {
-              await execAsync("git merge --abort", { cwd: projectRootDir, timeout: 30_000 }).catch(() => undefined);
-              throw new Error(
-                `Non-ff merge of ${worktreeHeadSha} into ${integrationBranch} failed without conflict markers: ${mergeMsg}`,
-              );
-            }
-            mergerLog.log(
-              `${taskId}: ${conflicted.length} conflict(s) applying squash to ${integrationBranch} — invoking AI conflict resolution`,
-            );
-            const conflictAssignedAgentId = task.assignedAgentId?.trim();
-            const conflictAgentStoreWithGetAgent = options.agentStore
-              && typeof (options.agentStore as { getAgent?: unknown }).getAgent === "function"
-              ? options.agentStore
-              : null;
-            const conflictAssignedAgent = conflictAssignedAgentId && conflictAgentStoreWithGetAgent
-              ? await (conflictAgentStoreWithGetAgent as any).getAgent(conflictAssignedAgentId).catch(() => null)
-              : null;
-            const conflictRuntimeHint = extractRuntimeHint(conflictAssignedAgent?.runtimeConfig);
-            await resolveComplexRebaseConflictsWithAi(
-              store,
-              projectRootDir,
+        const integrationBranch = mergeTarget.branch || await resolveIntegrationBranch(projectRootDir, settings);
+        const expectedCurrentSha = execSyncText(`git rev-parse --verify ${quoteArg(`refs/heads/${integrationBranch}`)}`, {
+          cwd: rootDir,
+          stdio: "pipe",
+          encoding: "utf-8",
+        }).trim();
+        const advanceResult = await advanceIntegrationBranchRef({
+          rootDir,
+          projectRootDir,
+          integrationBranch,
+          newSha: worktreeHeadSha,
+          expectedCurrentSha,
+          taskId,
+          audit,
+        });
+        if (!advanceResult.advanced) {
+          if (advanceResult.reason === "concurrent-advance") {
+            throw new IntegrationBranchConcurrentAdvanceError({
+              integrationBranch,
+              expectedCurrentSha,
+              observedCurrentSha: advanceResult.observedCurrentSha,
+              newSha: worktreeHeadSha,
               taskId,
-              settings,
-              conflicted,
-              {
-                onAgentText: options.onAgentText,
-                signal: options.signal,
-                runtimeHint: conflictRuntimeHint,
-                assignedAgentRuntimeConfig: conflictAssignedAgent?.runtimeConfig,
-                onSession: options.onSession,
-              },
-            );
-            const stillConflicted = await getConflictedFiles(projectRootDir).catch(() => [] as string[]);
-            if (stillConflicted.length > 0) {
-              await execAsync("git merge --abort", { cwd: projectRootDir, timeout: 30_000 }).catch(() => undefined);
-              throw new Error(
-                `AI conflict resolution left ${stillConflicted.length} unresolved file(s) when applying squash to ${integrationBranch}: ${stillConflicted.join(", ")}`,
-              );
-            }
-            await execAsync(`git commit --no-edit`, {
-              cwd: projectRootDir,
-              encoding: "utf-8",
-              timeout: 60_000,
             });
-            await (audit as any).git({
-              type: "merge:reuse-integration-branch-advanced",
-              target: integrationBranch,
-              metadata: {
-                taskId,
-                sha: worktreeHeadSha,
-                via: "non-ff-merge-ai-resolved",
-                projectRootDir,
-                conflictedFiles: conflicted,
-              },
-            });
-            mergerLog.log(
-              `${taskId}: applied squash ${worktreeHeadSha.slice(0, 8)} to ${integrationBranch} in project root after AI conflict resolution (${conflicted.length} file(s))`,
-            );
           }
+          throw new Error(`Failed to advance ${integrationBranch} via update-ref: ${advanceResult.diagnostic}`);
         }
+        mergerLog.log(
+          `${taskId}: ${integrationBranch} advanced to ${worktreeHeadSha.slice(0, 8)} via update-ref; your checked-out worktree at ${projectRootDir} is now behind`,
+        );
       }
     } catch (advErr: unknown) {
       const advMsg = advErr instanceof Error ? advErr.message : String(advErr);
       mergerLog.error(
-        `${taskId}: failed to apply squash to ${mergeTarget.branch} in project root: ${advMsg}`,
+        `${taskId}: failed to advance ${mergeTarget.branch} via update-ref: ${advMsg}`,
       );
-      await (audit as any).git({
-        type: "merge:reuse-integration-branch-advance-failed",
-        target: mergeTarget.branch,
-        metadata: { taskId, error: advMsg, projectRootDir },
-      });
       // Abort: leaving reuseTaskWorktreeMerge=true would cause the subsequent
-      // push step to operate on projectRootDir where the squash was never
-      // applied, shipping the pre-merge ref. Mark the reuse-merge as failed
+      // push step to operate on projectRootDir where the target ref was never
+      // advanced, shipping the pre-merge ref. Mark the reuse-merge as failed
       // and surface the error so the merge can be retried cleanly.
       reuseTaskWorktreeMerge = false;
-      throw new Error(
-        `Failed to advance ${mergeTarget.branch} in project root after reuse-task-worktree squash: ${advMsg}`,
-      );
+      throw advErr;
     }
   }
 
@@ -9170,9 +9096,11 @@ export async function aiMergeTask(
         : null;
       const pushRuntimeHint = extractRuntimeHint(pushAssignedAgent?.runtimeConfig);
       // In reuse-task-worktree mode, rootDir is the task worktree with a
-      // detached HEAD; step 5c already advanced the project root's
-      // integration branch to the new squash commit, so push from
-      // projectRootDir where the branch is checked out and at the new tip.
+      // detached HEAD; step 5c advanced refs/heads/<integration-branch> via
+      // `git update-ref` (FN-5350). The shared ref now points at the new squash
+      // commit, so pushing from projectRootDir (where the branch is checked out,
+      // but the working tree may be dirty and is NOT touched by us) sends the
+      // new tip to the remote.
       const pushRootDir = reuseTaskWorktreeMerge ? projectRootDir : rootDir;
       const pushResult = await pushToRemoteAfterMerge(store, pushRootDir, taskId, settings, {
         onAgentText: options.onAgentText,
@@ -9342,7 +9270,11 @@ export async function aiMergeTask(
  *  HEAD when origin is strictly ahead. Returns silently on any failure
  *  (no remote configured, network down, divergent local commits, etc.).
  *  Only called for the smart strategies, which want to avoid resolving a
- *  conflict against a stale local base. */
+ *  conflict against a stale local base.
+ *
+ *  NOTE: This is NOT FN-5350's integration-branch ref advance path. FN-5350
+ *  advances refs/heads/<integration-branch> via compare-and-swap `git update-ref`.
+ */
 async function tryFastForwardFromOrigin(
   rootDir: string,
   taskId: string,

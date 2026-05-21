@@ -78,9 +78,11 @@ describe("FN-5279 reliability interactions: merge reuse task worktree", () => {
       const advanced = audits.find(
         (event) => event.mutationType === "merge:reuse-integration-branch-advanced",
       );
-      expect(advanced?.metadata).toMatchObject({ via: "ff-merge" });
+      expect(advanced?.metadata).toMatchObject({ via: "update-ref" });
       expect(git(rootDir, "git rev-parse HEAD")).not.toBe(rootHeadBefore);
-      expect(git(rootDir, "git status --porcelain --untracked-files=no")).toBe(rootTrackedStatusBefore);
+      const rootTrackedStatusAfter = git(rootDir, "git status --porcelain --untracked-files=no");
+      expect(rootTrackedStatusAfter).not.toBe(rootTrackedStatusBefore);
+      expect(rootTrackedStatusAfter).toContain("fn-5279-ri-happy.ts");
     } finally {
       await fixture.cleanup();
     }

@@ -166,6 +166,8 @@ export type GitMutationType =
   | "merge:reuse-fallback-reused-existing-registration"
   | "merge:reuse-worktree-fresh-acquire"
   | "merge:reuse-worktree-fresh-acquired"
+  | "merge:reuse-integration-branch-advanced"
+  | "merge:reuse-integration-branch-advance-failed"
   | "merge:audit-failure"
   | "branch:auto-reclaim"
   | "branch:auto-canonicalize-case"

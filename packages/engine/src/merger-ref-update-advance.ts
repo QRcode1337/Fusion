@@ -1,0 +1,188 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { RunAuditor } from "./run-audit.js";
+
+const execFileAsync = promisify(execFile);
+
+async function runGit(args: string[], cwd: string): Promise<{ stdout: string; stderr: string }> {
+  return await execFileAsync("git", args, {
+    cwd,
+    encoding: "utf-8",
+    timeout: 30_000,
+  });
+}
+
+const testHooks = {
+  runGit,
+};
+
+export class IntegrationBranchConcurrentAdvanceError extends Error {
+  readonly integrationBranch: string;
+  readonly expectedCurrentSha: string;
+  readonly observedCurrentSha?: string;
+  readonly newSha: string;
+  readonly taskId: string;
+
+  constructor(args: {
+    integrationBranch: string;
+    expectedCurrentSha: string;
+    observedCurrentSha?: string;
+    newSha: string;
+    taskId: string;
+  }) {
+    const { integrationBranch, expectedCurrentSha, observedCurrentSha, newSha, taskId } = args;
+    super(
+      `Integration branch ${integrationBranch} advanced concurrently (expected ${expectedCurrentSha}, observed ${observedCurrentSha ?? "unknown"}) while applying ${newSha} for ${taskId}`,
+    );
+    this.name = "IntegrationBranchConcurrentAdvanceError";
+    this.integrationBranch = integrationBranch;
+    this.expectedCurrentSha = expectedCurrentSha;
+    this.observedCurrentSha = observedCurrentSha;
+    this.newSha = newSha;
+    this.taskId = taskId;
+  }
+}
+
+export async function advanceIntegrationBranchRef(args: {
+  rootDir: string;
+  projectRootDir: string;
+  integrationBranch: string;
+  newSha: string;
+  expectedCurrentSha: string;
+  taskId: string;
+  audit: RunAuditor;
+}): Promise<
+  | { advanced: true; previousSha: string; newSha: string }
+  | {
+    advanced: false;
+    reason: "concurrent-advance" | "ref-update-refused" | "missing-current-sha";
+    diagnostic: string;
+    observedCurrentSha?: string;
+  }
+> {
+  const {
+    rootDir,
+    projectRootDir,
+    integrationBranch,
+    newSha,
+    expectedCurrentSha,
+    taskId,
+    audit,
+  } = args;
+
+  if (!integrationBranch?.trim()) {
+    throw new Error("advanceIntegrationBranchRef requires integrationBranch");
+  }
+  if (!newSha?.trim()) {
+    throw new Error("advanceIntegrationBranchRef requires newSha");
+  }
+  if (!expectedCurrentSha?.trim()) {
+    throw new Error("advanceIntegrationBranchRef requires expectedCurrentSha");
+  }
+
+  const ref = `refs/heads/${integrationBranch}`;
+  let observedCurrentSha = "";
+  try {
+    const { stdout } = await testHooks.runGit(["rev-parse", "--verify", ref], rootDir);
+    observedCurrentSha = stdout.trim();
+  } catch (error: unknown) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    await audit.git({
+      type: "merge:reuse-integration-branch-advance-failed",
+      target: integrationBranch,
+      metadata: {
+        taskId,
+        newSha,
+        expectedCurrentSha,
+        reason: "missing-current-sha",
+        diagnostic,
+        projectRootDir,
+      },
+    });
+    return {
+      advanced: false,
+      reason: "missing-current-sha",
+      diagnostic,
+    };
+  }
+
+  if (!observedCurrentSha) {
+    const diagnostic = `Missing current sha for ${ref}`;
+    await audit.git({
+      type: "merge:reuse-integration-branch-advance-failed",
+      target: integrationBranch,
+      metadata: {
+        taskId,
+        newSha,
+        expectedCurrentSha,
+        reason: "missing-current-sha",
+        diagnostic,
+        projectRootDir,
+      },
+    });
+    return {
+      advanced: false,
+      reason: "missing-current-sha",
+      diagnostic,
+    };
+  }
+
+  if (observedCurrentSha !== expectedCurrentSha) {
+    const diagnostic = `Expected ${expectedCurrentSha} but observed ${observedCurrentSha} for ${ref}`;
+    await audit.git({
+      type: "merge:reuse-integration-branch-advance-failed",
+      target: integrationBranch,
+      metadata: {
+        taskId,
+        newSha,
+        expectedCurrentSha,
+        observedCurrentSha,
+        reason: "concurrent-advance",
+        diagnostic,
+        projectRootDir,
+      },
+    });
+    return {
+      advanced: false,
+      reason: "concurrent-advance",
+      diagnostic,
+      observedCurrentSha,
+    };
+  }
+
+  try {
+    await testHooks.runGit(["update-ref", ref, newSha, expectedCurrentSha], rootDir);
+    await audit.git({
+      type: "merge:reuse-integration-branch-advanced",
+      target: integrationBranch,
+      metadata: { taskId, sha: newSha, via: "update-ref", expectedCurrentSha, projectRootDir },
+    });
+    return { advanced: true, previousSha: expectedCurrentSha, newSha };
+  } catch (error: unknown) {
+    const diagnostic = error instanceof Error ? error.message : String(error);
+    const lower = diagnostic.toLowerCase();
+    const isConcurrent = lower.includes("cannot lock ref") || lower.includes("is at") || lower.includes("expected");
+    const reason = isConcurrent ? "concurrent-advance" : "ref-update-refused";
+    await audit.git({
+      type: "merge:reuse-integration-branch-advance-failed",
+      target: integrationBranch,
+      metadata: {
+        taskId,
+        newSha,
+        expectedCurrentSha,
+        observedCurrentSha,
+        reason,
+        diagnostic,
+        projectRootDir,
+      },
+    });
+    return {
+      advanced: false,
+      reason,
+      diagnostic,
+      observedCurrentSha,
+    };
+  }
+}
+
+export const __test__ = testHooks;
