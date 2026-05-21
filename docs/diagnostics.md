@@ -75,3 +75,19 @@ Direct-report stale decisions in `HeartbeatMonitor.buildReportsHealthSection()` 
 - Fail-soft diagnostic: `[triage] <taskId>: broad-scope heuristic failed open: <message>` when the helper throws; the task still proceeds to `todo`.
 - Audit event: `task:broad-scope-flagged-at-triage` with `{ score, reasons, signals, thresholds, version }`.
 - Task log side effect: `Broad-scope triage flag` advising operators to decompose via `fn_task_create` or set `breakIntoSubtasks=true` before execution.
+
+## Resume instrumentation (FN-5389, Phase 1)
+
+Dashboard Phase 1 resume instrumentation adds observation-only client/server traces for refetch/reconnect attribution. It does not change visibility/pageshow/SSE behavior; FN-5392 consumes this data for fixes.
+
+- Client event shape (`ResumeEvent`): `{ ts, view, trigger, projectId?, gapMs?, replayAttempted, replayFromEventId?, lastEventId?, sseChannel?, reason?, detail? }`.
+- Trigger taxonomy: `visibility`, `pageshow`, `sse-error`, `sse-reconnect`, `sse-open`, `remount`, `route-active`, `route-inactive`, `project-context-change`.
+- Sources:
+  - `sse-bus` (`pageshow`, visible `visibilitychange`, `openChannel`, `forceReconnect`, EventSource `error`)
+  - Hooks: `useTasks` (`visibility`, `sse-reconnect`), `useChatRooms` (`sse-reconnect`), `useChat` (`sse-open`, `project-context-change`)
+  - Components: `Board` and `ChatView` mount/unmount route markers (`remount` / `route-active` / `route-inactive`)
+- Access paths:
+  - Client ring (500): `window.__fusionDebug.resumeInstrumentation.get()` / `.clear()`
+  - Server ring (5000, in-memory): `GET /api/diagnostics/resume-events?limit=&since=&view=` returns `{ events, droppedSinceLastRead }`
+- Client batching: POST `/api/diagnostics/resume-events` in idle batches (`<=25` per POST).
+- Disable knob: `window.__fusionDebug.resumeInstrumentation.setEnabled(false)`.

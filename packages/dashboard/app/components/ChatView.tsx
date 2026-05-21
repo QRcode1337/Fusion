@@ -45,6 +45,7 @@ import { useMobileScrollLock } from "../hooks/useMobileScrollLock";
 import { matchesAgentMentionFilter } from "./mentionMatching";
 import { useNavigationHistoryContext } from "../hooks/useNavigationHistory";
 import { linkifyFilePaths, linkifyReactChildren } from "../utils/filePathLinkify";
+import { recordResumeEvent } from "../utils/resumeInstrumentation";
 
 export interface ChatViewProps {
   projectId?: string;
@@ -55,6 +56,7 @@ export interface ChatViewProps {
 // Keep a generous cap so pasted multi-paragraph text stays visible while
 // still preventing the composer from overtaking the message pane on short viewports.
 const CHAT_INPUT_MAX_HEIGHT_PX = 640;
+let chatViewWasPreviouslyInactive = false;
 
 export function clampChatInputHeight(scrollHeight: number): number {
   // Floor matches QuickChat (clampQuickChatInputHeight) and the CSS min-height,
@@ -889,6 +891,26 @@ const ChatMessageItem = memo(function ChatMessageItem({
 });
 
 export function ChatView({ projectId, addToast, experimentalFeatures }: ChatViewProps) {
+  useEffect(() => {
+    recordResumeEvent({
+      view: "ChatView",
+      trigger: chatViewWasPreviouslyInactive ? "route-active" : "remount",
+      projectId,
+      replayAttempted: false,
+    });
+    chatViewWasPreviouslyInactive = false;
+
+    return () => {
+      chatViewWasPreviouslyInactive = true;
+      recordResumeEvent({
+        view: "ChatView",
+        trigger: "route-inactive",
+        projectId,
+        replayAttempted: false,
+      });
+    };
+  }, [projectId]);
+
   const {
     activeSession,
     sessionsLoading,

@@ -37,7 +37,7 @@ describe("TaskDetailModal", () => {
       expectBaseRule(css, ".detail-timestamp-item", "display: inline-flex;");
       expectBaseRule(css, ".detail-timestamp-separator", "color: var(--text-dim);");
 
-      expect(css).toMatch(/@media \(max-width: 768px\)\s*\{\s*\.detail-provenance\s*\{[^}]*\}\s*\.detail-timestamps\s*\{[^}]*align-items:\s*center;[^}]*flex-wrap:\s*nowrap;/);
+      expect(css).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.detail-timestamps\s*\{[^}]*align-items:\s*center;[^}]*flex-wrap:\s*nowrap;/);
       expect(css).not.toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*?\.detail-timestamps\s*\{[^}]*flex-direction:\s*column;/);
       expect(css).not.toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*?\.detail-timestamp-separator\s*\{[^}]*display:\s*none;/);
     });

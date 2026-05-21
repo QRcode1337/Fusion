@@ -167,6 +167,7 @@ import { registerAuthRoutes } from "./routes/register-auth-routes.js";
 import { registerRuntimeProviderRoutes } from "./routes/register-runtime-provider-routes.js";
 import { registerFnBinaryRoutes } from "./routes/register-fn-binary-routes.js";
 import { registerUpdateCheckRoutes } from "./routes/register-update-check-routes.js";
+import { registerDiagnosticsRoutes } from "./routes/register-diagnostics-routes.js";
 import { registerIntegratedRouters, registerIntegratedDevServerRouter } from "./routes/register-integrated-routers.js";
 import { registerApprovalRoutes } from "./routes/register-approval-routes.js";
 import { registerWorktrunkRoutes } from "./routes/register-worktrunk-routes.js";
@@ -1865,6 +1866,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   registerUsageRoutes(routeContext);
   registerUpdateCheckRoutes(routeContext);
+  registerDiagnosticsRoutes(routeContext);
 
   // ── Automation / Scheduled Task Routes ────────────────────────────
   //

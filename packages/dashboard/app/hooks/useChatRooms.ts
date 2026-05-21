@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { subscribeSse } from "../sse-bus";
 import { getScopedItem, removeScopedItem, setScopedItem } from "../utils/projectStorage";
+import { recordResumeEvent } from "../utils/resumeInstrumentation";
 import { readCache, SWR_CACHE_KEYS, SWR_DEFAULT_MAX_AGE_MS, SWR_LONG_MAX_AGE_MS, writeCache } from "../utils/swrCache";
 
 const ACTIVE_ROOM_STORAGE_KEY = "fusion:chat-active-room";
@@ -324,6 +325,12 @@ export function useChatRooms(
 
     return subscribeSse(eventsUrl, {
       onReconnect: () => {
+        recordResumeEvent({
+          view: "useChatRooms",
+          trigger: "sse-reconnect",
+          projectId,
+          replayAttempted: false,
+        });
         void refreshRooms();
       },
       events: {
