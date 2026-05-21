@@ -3311,6 +3311,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     source: "createTask" | "createTaskWithReservedId" | "updateTask" | "replication",
     overrides?: Map<string, readonly string[]>,
   ): Promise<void> {
+    if (dependencies.length === 0 && !overrides) return;
     const lookup = await this.buildActiveTaskDependencyLookup(overrides);
     const cyclePath = detectDependencyCycle(taskId, dependencies, (candidateId) => lookup.get(candidateId));
     if (!cyclePath) return;
