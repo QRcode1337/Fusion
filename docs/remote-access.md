@@ -70,7 +70,7 @@ Cloudflare **Quick Tunnel** startup gates (`quickTunnel = true`):
 
 No Cloudflare account, tunnel token, named tunnel, or pre-created ingress URL is required.
 
-Dashboard note: in Settings → Remote Access, selecting Cloudflare now performs a proactive `cloudflared` CLI detection check and shows a one-click **Install cloudflared** action (with manual command fallback) if the binary is missing.
+Dashboard note: in Settings → Remote Access, selecting Cloudflare performs a proactive `cloudflared` CLI detection check and shows a one-click **Install cloudflared** action (with manual command fallback) if the binary is missing. The direct-download path is pinned-manifest gated: until maintainers flip the shipped manifest from `upstream-pending-verification` to a verified tagged release with per-asset `.sha256` sidecars, auto-download fails closed and the UI surfaces package-manager/manual fallback commands.
 
 Runtime command used by engine:
 

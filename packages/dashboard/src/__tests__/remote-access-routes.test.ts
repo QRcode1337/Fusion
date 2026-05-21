@@ -15,7 +15,13 @@ vi.mock("node:child_process", async (importOriginal) => {
   };
 });
 
+import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createApiRoutes } from "../routes.js";
+import {
+  __setCloudflaredManifestForTesting,
+  validateCloudflaredManifest,
+} from "../routes/register-settings-memory-routes.js";
 import { request as performRequest } from "../test-request.js";
 
 function buildRemoteAccessSettings(overrides: Record<string, unknown> = {}) {
@@ -106,6 +112,7 @@ function setProcessRuntime(platform: NodeJS.Platform, arch: string): void {
 }
 
 afterEach(() => {
+  __setCloudflaredManifestForTesting(null);
   if (originalPlatformDescriptor) {
     Object.defineProperty(process, "platform", originalPlatformDescriptor);
   }
@@ -308,6 +315,18 @@ describe("remote access provider/lifecycle contracts", () => {
     expect(result.body).toEqual({ ok: true });
   });
 
+  const makeVerifiedManifest = (assetName: string, sha256: string) => ({
+    source: "upstream-verified" as const,
+    version: "2026.5.0",
+    verifiedAt: "2026-05-20T00:00:00.000Z",
+    assets: {
+      [assetName]: {
+        url: `https://github.com/cloudflare/cloudflared/releases/download/2026.5.0/${assetName}`,
+        sha256,
+      },
+    },
+  });
+
   it("installs cloudflared via endpoint and returns install command metadata", async () => {
     setProcessRuntime("linux", "x64");
     const { app } = createApp();
@@ -316,10 +335,11 @@ describe("remote access provider/lifecycle contracts", () => {
 
     expect(result.status).toBe(200);
     expect(result.body).toEqual(expect.objectContaining({
-      success: true,
+      success: false,
       command: expect.stringContaining("cloudflared-linux-amd64"),
+      error: expect.stringContaining("upstream-pending-verification"),
     }));
-    expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-linux-amd64"))).toBe(true);
+    expect(mockExecFile.mock.calls.every(([command]) => command !== "curl")).toBe(true);
   });
 
   it("uses arm64 cloudflared binary on Linux arm64", async () => {
@@ -330,18 +350,25 @@ describe("remote access provider/lifecycle contracts", () => {
 
     expect(result.status).toBe(200);
     expect(result.body).toEqual(expect.objectContaining({
-      success: true,
+      success: false,
       command: expect.stringContaining("cloudflared-linux-arm64"),
+      error: expect.stringContaining("upstream-pending-verification"),
     }));
-    expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-linux-arm64"))).toBe(true);
+    expect(mockExecFile.mock.calls.every(([command]) => command !== "curl")).toBe(true);
   });
 
   it("falls back to ~/.local/bin when /usr/local/bin move fails with permission error", async () => {
     setProcessRuntime("linux", "x64");
+    const payload = Buffer.from("cloudflared-ok");
+    const sha256 = createHash("sha256").update(payload).digest("hex");
+    __setCloudflaredManifestForTesting(makeVerifiedManifest("cloudflared-linux-amd64", sha256));
     mockExecFile.mockImplementation((command: string, args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
       const callback = typeof optionsOrCallback === "function"
         ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
         : maybeCallback;
+      if (command === "curl") {
+        writeFileSync("/tmp/cloudflared", payload);
+      }
       if (command === "mv" && args[1] === "/usr/local/bin/cloudflared") {
         callback?.(new Error("EPERM"), "", "EPERM");
         return;
@@ -360,6 +387,9 @@ describe("remote access provider/lifecycle contracts", () => {
 
   it("falls back to direct download on macOS when brew is unavailable", async () => {
     setProcessRuntime("darwin", "arm64");
+    const payload = Buffer.from("cloudflared-darwin");
+    const sha256 = createHash("sha256").update(payload).digest("hex");
+    __setCloudflaredManifestForTesting(makeVerifiedManifest("cloudflared-darwin-arm64", sha256));
     mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
       const callback = typeof optionsOrCallback === "function"
         ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
@@ -368,6 +398,9 @@ describe("remote access provider/lifecycle contracts", () => {
         callback?.(new Error("brew not found"), "", "brew not found");
         return;
       }
+      if (command === "curl") {
+        writeFileSync("/tmp/cloudflared", payload);
+      }
       callback?.(null, "", "");
     });
 
@@ -375,16 +408,15 @@ describe("remote access provider/lifecycle contracts", () => {
     const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
 
     expect(result.status).toBe(200);
-    expect(result.body).toEqual(expect.objectContaining({
-      success: true,
-      command: expect.stringContaining("cloudflared-darwin-arm64"),
-    }));
+    expect(result.body).toEqual(expect.objectContaining({ success: true, command: expect.stringContaining("cloudflared-darwin-arm64") }));
     expect(mockExecFile.mock.calls.some(([command]) => command === "brew")).toBe(false);
     expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-darwin-arm64"))).toBe(true);
   });
 
   it("returns install failure details when cloudflared installation command fails", async () => {
     setProcessRuntime("linux", "x64");
+    const sha256 = "a".repeat(64);
+    __setCloudflaredManifestForTesting(makeVerifiedManifest("cloudflared-linux-amd64", sha256));
     mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
       const callback = typeof optionsOrCallback === "function"
         ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
@@ -405,5 +437,107 @@ describe("remote access provider/lifecycle contracts", () => {
       command: expect.any(String),
       error: expect.stringContaining("Command failed"),
     }));
+  });
+
+  describe("cloudflared manifest verification", () => {
+    it("validateCloudflaredManifest accepts a pending manifest", () => {
+      expect(validateCloudflaredManifest({ source: "upstream-pending-verification", version: null, verifiedAt: null, assets: {} })).toEqual({ ok: true });
+    });
+
+    it("validateCloudflaredManifest rejects pending manifest with non-empty assets", () => {
+      const result = validateCloudflaredManifest({ source: "upstream-pending-verification", version: null, verifiedAt: null, assets: { a: { url: "x", sha256: "a" } } });
+      expect(result.ok).toBe(false);
+    });
+
+    it("validateCloudflaredManifest accepts a verified manifest with proper sha256 and tagged URL", () => {
+      expect(validateCloudflaredManifest(makeVerifiedManifest("cloudflared-linux-amd64", "a".repeat(64)))).toEqual({ ok: true });
+    });
+
+    it("validateCloudflaredManifest rejects verified manifest with releases/latest/download URL", () => {
+      const result = validateCloudflaredManifest({ source: "upstream-verified", version: "v", verifiedAt: "2026-01-01T00:00:00.000Z", assets: { a: { url: "https://github.com/cloudflare/cloudflared/releases/latest/download/a", sha256: "a".repeat(64) } } });
+      expect(result.ok).toBe(false);
+    });
+
+    it("validateCloudflaredManifest rejects verified manifest with empty sha256", () => {
+      const result = validateCloudflaredManifest({ source: "upstream-verified", version: "v", verifiedAt: "2026-01-01T00:00:00.000Z", assets: { a: { url: "https://github.com/cloudflare/cloudflared/releases/download/v/a", sha256: "" } } });
+      expect(result.ok).toBe(false);
+    });
+
+    it("validateCloudflaredManifest rejects verified manifest with uppercase or short sha256", () => {
+      expect(validateCloudflaredManifest({ source: "upstream-verified", version: "v", verifiedAt: "2026-01-01T00:00:00.000Z", assets: { a: { url: "https://github.com/cloudflare/cloudflared/releases/download/v/a", sha256: "A".repeat(64) } } }).ok).toBe(false);
+      expect(validateCloudflaredManifest({ source: "upstream-verified", version: "v", verifiedAt: "2026-01-01T00:00:00.000Z", assets: { a: { url: "https://github.com/cloudflare/cloudflared/releases/download/v/a", sha256: "a".repeat(63) } } }).ok).toBe(false);
+    });
+
+    it("validateCloudflaredManifest never throws on garbage input", () => {
+      for (const input of [null, undefined, 42, "string", []]) {
+        expect(() => validateCloudflaredManifest(input)).not.toThrow();
+        expect(validateCloudflaredManifest(input).ok).toBe(false);
+      }
+    });
+
+    it("installCloudflared fails closed when manifest is upstream-pending-verification", async () => {
+      setProcessRuntime("linux", "x64");
+      const { app } = createApp();
+      const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+      expect(result.body.success).toBe(false);
+      expect(result.body.error).toContain("upstream-pending-verification");
+      expect(mockExecFile.mock.calls.every(([command]) => command !== "curl")).toBe(true);
+    });
+
+    it("installCloudflared verifies sha256 and proceeds on verified manifest", async () => {
+      setProcessRuntime("linux", "x64");
+      const payload = Buffer.from("verified-payload");
+      const sha256 = createHash("sha256").update(payload).digest("hex");
+      __setCloudflaredManifestForTesting(makeVerifiedManifest("cloudflared-linux-amd64", sha256));
+      mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
+        const callback = typeof optionsOrCallback === "function" ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void : maybeCallback;
+        if (command === "curl") writeFileSync("/tmp/cloudflared", payload);
+        callback?.(null, "", "");
+      });
+      const { app } = createApp();
+      const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+      expect(result.body.success).toBe(true);
+      expect(mockExecFile.mock.calls.some(([command]) => command === "chmod")).toBe(true);
+      expect(mockExecFile.mock.calls.some(([command]) => command === "mv")).toBe(true);
+    });
+
+    it("installCloudflared aborts when downloaded sha256 does not match", async () => {
+      setProcessRuntime("linux", "x64");
+      __setCloudflaredManifestForTesting(makeVerifiedManifest("cloudflared-linux-amd64", "a".repeat(64)));
+      mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
+        const callback = typeof optionsOrCallback === "function" ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void : maybeCallback;
+        if (command === "curl") writeFileSync("/tmp/cloudflared", Buffer.from("mismatch"));
+        callback?.(null, "", "");
+      });
+      const { app } = createApp();
+      const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+      expect(result.body.success).toBe(false);
+      expect(result.body.error).toContain("sha256 mismatch");
+      expect(mockExecFile.mock.calls.some(([command]) => command === "rm")).toBe(true);
+      const firstChmodIndex = mockExecFile.mock.calls.findIndex(([command]) => command === "chmod");
+      const firstMvIndex = mockExecFile.mock.calls.findIndex(([command]) => command === "mv");
+      expect(firstChmodIndex).toBe(-1);
+      expect(firstMvIndex).toBe(-1);
+    });
+
+    it("installCloudflared on win32 (winget) is unchanged by manifest state", async () => {
+      setProcessRuntime("win32", "x64");
+      const { app } = createApp();
+      const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+      expect(result.body.success).toBe(true);
+      expect(mockExecFile.mock.calls.some(([command]) => command === "winget")).toBe(true);
+    });
+
+    it("installCloudflared on darwin uses brew when present, regardless of manifest state", async () => {
+      setProcessRuntime("darwin", "arm64");
+      mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
+        const callback = typeof optionsOrCallback === "function" ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void : maybeCallback;
+        callback?.(null, command === "which" ? "/opt/homebrew/bin/brew" : "", "");
+      });
+      const { app } = createApp();
+      const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+      expect(result.body.success).toBe(true);
+      expect(mockExecFile.mock.calls.some(([command]) => command === "brew")).toBe(true);
+    });
   });
 });

@@ -52,6 +52,7 @@ import {
 } from "@fusion/engine";
 import QRCode from "qrcode";
 import crypto from "node:crypto";
+import { createReadStream } from "node:fs";
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
@@ -66,6 +67,115 @@ interface SettingsMemoryRouteDeps {
   validateModelPresets: (input: unknown) => ModelPreset[] | undefined;
   sanitizeOverlapIgnorePaths: (input: unknown) => string[] | undefined;
   discoverDashboardPiExtensions: (cwd: string) => Promise<PiExtensionSettings>;
+}
+
+export interface CloudflaredReleaseAsset {
+  url: string;
+  sha256: string;
+}
+
+export interface CloudflaredReleaseManifest {
+  source: "upstream-pending-verification" | "upstream-verified";
+  version: string | null;
+  verifiedAt: string | null;
+  assets: Record<string, CloudflaredReleaseAsset>;
+}
+
+/**
+ * Pinned cloudflared release manifest.
+ * Upstream repo: https://github.com/cloudflare/cloudflared
+ * Docs: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+ * Release assets: https://github.com/cloudflare/cloudflared/releases/download/<tag>/<asset>
+ *
+ * Maintainer promotion procedure (FN-5321 external-integration evidence):
+ * 1) Select a specific release tag from the upstream releases page.
+ * 2) For each supported asset, fetch the matching `<asset>.sha256` sidecar from that tagged release.
+ * 3) Set `source` to `upstream-verified`, set `version` to the tag, set `verifiedAt` to ISO8601,
+ *    and populate `assets` with tagged URLs + 64-char lowercase sha256 values.
+ *
+ * Until that verification is completed, this remains fail-closed.
+ */
+export const CLOUDFLARED_PINNED_RELEASE: CloudflaredReleaseManifest = {
+  source: "upstream-pending-verification",
+  version: null,
+  verifiedAt: null,
+  assets: {},
+};
+
+let cloudflaredManifestOverrideForTesting: CloudflaredReleaseManifest | null = null;
+
+export function __setCloudflaredManifestForTesting(manifest: CloudflaredReleaseManifest | null): void {
+  cloudflaredManifestOverrideForTesting = manifest;
+}
+
+function getCloudflaredManifest(): CloudflaredReleaseManifest {
+  return cloudflaredManifestOverrideForTesting ?? CLOUDFLARED_PINNED_RELEASE;
+}
+
+export function validateCloudflaredManifest(input: unknown): { ok: true } | { ok: false; missingFields: string[]; reason: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, missingFields: ["manifest"], reason: "manifest must be an object" };
+  }
+
+  const manifest = input as Partial<CloudflaredReleaseManifest> & { assets?: unknown };
+  const missingFields: string[] = [];
+
+  if (manifest.source !== "upstream-pending-verification" && manifest.source !== "upstream-verified") {
+    missingFields.push("source");
+  }
+  if (!(typeof manifest.version === "string" || manifest.version === null)) {
+    missingFields.push("version");
+  }
+  if (!(typeof manifest.verifiedAt === "string" || manifest.verifiedAt === null)) {
+    missingFields.push("verifiedAt");
+  }
+
+  const assets = manifest.assets;
+  if (!assets || typeof assets !== "object" || Array.isArray(assets)) {
+    missingFields.push("assets");
+  }
+
+  if (missingFields.length > 0) {
+    return { ok: false, missingFields, reason: `missing or invalid manifest fields: ${missingFields.join(", ")}` };
+  }
+
+  const assetEntries = Object.entries(assets as Record<string, unknown>);
+
+  if (manifest.source === "upstream-pending-verification") {
+    if (assetEntries.length > 0) {
+      missingFields.push("assets");
+    }
+    if (manifest.version !== null) {
+      missingFields.push("version");
+    }
+    if (manifest.verifiedAt !== null) {
+      missingFields.push("verifiedAt");
+    }
+    if (missingFields.length > 0) {
+      return { ok: false, missingFields, reason: "fields must be empty/null when pending" };
+    }
+    return { ok: true };
+  }
+
+  for (const [assetName, assetRaw] of assetEntries) {
+    if (!assetRaw || typeof assetRaw !== "object" || Array.isArray(assetRaw)) {
+      missingFields.push(`assets.${assetName}`);
+      continue;
+    }
+    const asset = assetRaw as Partial<CloudflaredReleaseAsset>;
+    if (typeof asset.url !== "string" || !asset.url.startsWith("https://github.com/cloudflare/cloudflared/releases/download/")) {
+      missingFields.push(`assets.${assetName}.url`);
+    }
+    if (typeof asset.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(asset.sha256)) {
+      missingFields.push(`assets.${assetName}.sha256`);
+    }
+  }
+
+  if (missingFields.length > 0) {
+    return { ok: false, missingFields, reason: `missing or invalid manifest fields: ${missingFields.join(", ")}` };
+  }
+
+  return { ok: true };
 }
 
 export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: SettingsMemoryRouteDeps): void {
@@ -158,7 +268,35 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
     return [error.message, stderr, stdout].filter(Boolean).join(" | ");
   }
 
+  async function verifyDownloadedBinaryChecksum(tempPath: string, expectedSha256: string): Promise<void> {
+    const hash = crypto.createHash("sha256");
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(tempPath);
+      stream.on("data", (chunk) => hash.update(chunk));
+      stream.on("error", reject);
+      stream.on("end", resolve);
+    });
+
+    const actualSha256 = hash.digest("hex").toLowerCase();
+    const expected = expectedSha256.toLowerCase();
+    if (actualSha256 !== expected) {
+      throw new Error(
+        `cloudflared sha256 mismatch (expected ${expected}, got ${actualSha256}); refusing to install possibly tampered binary`,
+      );
+    }
+  }
+
   async function installCloudflared(): Promise<{ success: boolean; command: string; error?: string }> {
+    const manifest = getCloudflaredManifest();
+    const manifestValidation = validateCloudflaredManifest(manifest);
+    if (!manifestValidation.ok) {
+      return {
+        success: false,
+        command: resolveCloudflaredInstallCommand(),
+        error: `cloudflared manifest invalid: ${manifestValidation.reason}`,
+      };
+    }
+
     if (process.platform === "win32") {
       const command = resolveCloudflaredInstallCommand();
       try {
@@ -173,12 +311,29 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
     const downloadBinaryName = process.platform === "darwin" || process.platform === "linux"
       ? resolveCloudflaredBinaryName()
       : "cloudflared-linux-amd64";
-    const downloadUrl = `https://github.com/cloudflare/cloudflared/releases/latest/download/${downloadBinaryName}`;
     const tempPath = "/tmp/cloudflared";
 
     const installFromDirectDownload = async (): Promise<void> => {
-      attemptedCommands.push(`curl -L --output ${tempPath} ${downloadUrl}`);
-      await execFileAsync("curl", ["-L", "--output", tempPath, downloadUrl], { timeout: 120_000 });
+      const asset = manifest.assets[downloadBinaryName];
+      if (manifest.source === "upstream-pending-verification" || !asset) {
+        const packageManagerCommand = resolveCloudflaredInstallCommand();
+        attemptedCommands.push(packageManagerCommand);
+        const error = new Error(
+          `cloudflared install blocked: upstream-pending-verification manifest is not pinned for ${downloadBinaryName}; run '${packageManagerCommand}' (current platform), 'brew install cloudflared' (macOS), or 'winget install Cloudflare.cloudflared' (Windows), or pin a verified release at https://github.com/cloudflare/cloudflared/releases`,
+        );
+        throw Object.assign(error, { stage: "manifest-unverified" });
+      }
+
+      attemptedCommands.push(`curl -L --output ${tempPath} ${asset.url}`);
+      await execFileAsync("curl", ["-L", "--output", tempPath, asset.url], { timeout: 120_000 });
+      attemptedCommands.push(`verify sha256 of ${tempPath} against pinned manifest`);
+      try {
+        await verifyDownloadedBinaryChecksum(tempPath, asset.sha256);
+      } catch (error) {
+        attemptedCommands.push(`rm -f ${tempPath} (checksum mismatch cleanup)`);
+        await execFileAsync("rm", ["-f", tempPath], { timeout: 10_000 }).catch(() => {});
+        throw error;
+      }
 
       attemptedCommands.push(`chmod +x ${tempPath}`);
       await execFileAsync("chmod", ["+x", tempPath], { timeout: 30_000 });

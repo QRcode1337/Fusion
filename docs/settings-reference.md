@@ -588,7 +588,7 @@ The canonical persisted shape is a nested `remoteAccess` object.
 
 Use **[Remote Access runbook](./remote-access.md)** for setup prerequisites (Tailscale/Cloudflare), tokenized login-link security caveats, and operational troubleshooting. Keep this section as a schema reference.
 
-When `remoteAccess.activeProvider` is `cloudflare`, the Settings UI fetches `/api/remote/status` and surfaces `cloudflaredAvailable` to show installed/missing state plus a one-click `POST /api/remote/install-cloudflared` action.
+When `remoteAccess.activeProvider` is `cloudflare`, the Settings UI fetches `/api/remote/status` and surfaces `cloudflaredAvailable` to show installed/missing state plus a one-click `POST /api/remote/install-cloudflared` action. That endpoint preserves package-manager installs (`brew`, `winget`) and gates direct binary download behind a pinned manifest: default `upstream-pending-verification` mode fails closed until maintainers populate verified tagged-release URLs and sha256 sidecars.
 
 When `remoteAccess.activeProvider` is `tailscale` and the Fusion-managed tunnel is stopped, `/api/remote/status` also returns `externalTunnel` when a pre-existing funnel is detected. The UI exposes two actions: **Use Existing** (start Fusion tunnel lifecycle against the existing funnel) and **Start Fresh** (`POST /api/remote/tunnel/kill-external` then start).
 
