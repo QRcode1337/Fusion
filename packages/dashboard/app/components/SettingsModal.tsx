@@ -4639,6 +4639,22 @@ export function SettingsModal({
                   <small>
                     Auto-merge runs in the task worktree by default. Switch to the legacy project-root path only if you need the pre-FN-5279 fallback; worktrunk-managed projects still defer to worktrunk.
                   </small>
+                  {(form.mergeIntegrationWorktree ?? "reuse-task-worktree") !== "reuse-task-worktree" && (
+                    <div
+                      className="settings-warning-banner"
+                      role="alert"
+                      aria-live="polite"
+                      data-testid="merge-integration-worktree-warning"
+                    >
+                      <strong>Legacy integration-branch mode.</strong>{" "}
+                      Auto-merge will run rebase, conflict resolution, and squash commits inside the
+                      project root (the user&apos;s checked-out integration-branch worktree) instead of
+                      the task worktree. Fusion assumes that directory is already on the integration
+                      branch and clean; if it isn&apos;t, merges may fail or touch the user&apos;s working
+                      tree. Reuse-task-worktree is the recommended default (FN-5279). Switch back unless
+                      you have a specific reason to opt in (FN-5348).
+                    </div>
+                  )}
                 </div>
               </>
             )}

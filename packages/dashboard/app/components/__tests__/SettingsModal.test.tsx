@@ -396,6 +396,46 @@ describe("SettingsModal", () => {
     expect(payload.mergeIntegrationWorktree).toBe("cwd-main");
   });
 
+  it("does NOT render the warning banner when the integration worktree is reuse-task-worktree (default)", async () => {
+    renderModal({ initialSection: "merge" });
+    await waitForSettingsModalReady();
+
+    expect(screen.queryByTestId("merge-integration-worktree-warning")).toBeNull();
+  });
+
+  it("renders the warning banner when the legacy cwd-main mode is selected", async () => {
+    renderModal({ initialSection: "merge" });
+    await waitForSettingsModalReady();
+
+    await userEvent.selectOptions(screen.getByLabelText("Integration worktree"), "cwd-main");
+
+    const warning = screen.getByTestId("merge-integration-worktree-warning");
+    expect(warning).toBeInTheDocument();
+    expect(warning).toHaveAttribute("role", "alert");
+    expect(warning).toHaveTextContent("Legacy");
+    expect(warning).toHaveTextContent("FN-5348");
+  });
+
+  it("removes the warning banner when switching back to reuse-task-worktree", async () => {
+    mockFetchSettings.mockResolvedValueOnce({
+      ...defaultSettings,
+      mergeIntegrationWorktree: "cwd-main",
+    });
+    mockFetchSettingsByScope.mockResolvedValueOnce({
+      global: { ...defaultSettings, mergeIntegrationWorktree: "cwd-main" },
+      project: {},
+    });
+
+    renderModal({ initialSection: "merge" });
+    await waitForSettingsModalReady();
+
+    expect(screen.getByTestId("merge-integration-worktree-warning")).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Integration worktree"), "reuse-task-worktree");
+
+    expect(screen.queryByTestId("merge-integration-worktree-warning")).toBeNull();
+  });
+
   it("persists the legacy sibling branch rename escape hatch in worktree settings", async () => {
     renderModal();
     await waitForSettingsModalReady();
