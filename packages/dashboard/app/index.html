@@ -9,6 +9,54 @@
          viewport, leaving innerHeight stale and breaking keyboard-overlap math. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <script>
+      // Android Chrome (multi-window / split-screen / certain WebView modes)
+      // can leave the initial containing block (window.innerWidth/Height)
+      // stuck larger than the actual rendered canvas, while the DOM,
+      // visualViewport, and body all report the true dimensions. JS cannot
+      // force Chrome to recompute the ICB (neither setAttribute nor full
+      // element replacement of <meta viewport> works on those builds). So
+      // we publish the ICB→visible-viewport delta as CSS variables and
+      // `position: fixed` elements (nav bar, status bar) compensate via
+      // `bottom: var(--icb-bottom-offset)` etc. Healthy browsers see 0px.
+      (function () {
+        if (typeof window === 'undefined') return;
+        var apply = function () {
+          var vv = window.visualViewport;
+          var de = document.documentElement;
+          if (!de) return;
+          var innerW = window.innerWidth;
+          var innerH = window.innerHeight;
+          // Position relative to the visual viewport (what the user actually
+          // sees). This works correctly across states:
+          //   - Healthy: vv == ICB, offsets are 0.
+          //   - Chrome ICB-stuck-large bug: vv smaller than ICB → offset > 0
+          //     pulls fixed elements up/left into the visible area.
+          //   - Pinch-zoom in: vv smaller than ICB → ditto.
+          //   - Pinch-zoom out: vv larger than ICB → offsets clamp at 0.
+          var vvW = vv ? Math.round(vv.width) : innerW;
+          var vvH = vv ? Math.round(vv.height) : innerH;
+          var vvOffTop = vv ? vv.offsetTop : 0;
+          var vvOffLeft = vv ? vv.offsetLeft : 0;
+          var rightOffset = Math.max(0, innerW - vvOffLeft - vvW);
+          var bottomOffset = Math.max(0, innerH - vvOffTop - vvH);
+          de.style.setProperty('--icb-right-offset', rightOffset + 'px');
+          de.style.setProperty('--icb-bottom-offset', bottomOffset + 'px');
+        };
+        window.addEventListener('orientationchange', apply);
+        window.addEventListener('resize', apply);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', apply);
+          window.visualViewport.addEventListener('scroll', apply);
+        }
+        apply();
+        // Tail: ICB can drift after task content renders.
+        setTimeout(apply, 100);
+        setTimeout(apply, 500);
+        setTimeout(apply, 1500);
+        setTimeout(apply, 3000);
+      })();
+    </script>
+    <script>
       // Append ?vpdebug to the URL to show a fixed overlay with live viewport
       // + media-query state. Diagnostic only.
       (function () {

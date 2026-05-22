@@ -10,9 +10,14 @@
 
 .mobile-nav-bar {
   position: fixed;
-  bottom: 0;
+  /* --icb-bottom-offset / --icb-right-offset are published by the viewport
+     compensation script in index.html. On healthy browsers they stay 0px.
+     On Android Chrome when the ICB is inflated past the visible canvas
+     (multi-window / split-screen quirk) and on pinch-zoom, they pull
+     fixed-position elements back into the visible viewport. */
+  bottom: var(--icb-bottom-offset, 0px);
   left: 0;
-  right: 0;
+  right: var(--icb-right-offset, 0px);
   z-index: 45;
   display: none;
   align-items: stretch;
@@ -32,7 +37,7 @@
   }
 
   .mobile-nav-bar--with-footer {
-    bottom: 0;
+    bottom: var(--icb-bottom-offset, 0px);
   }
 
   /* Content padding: mobile nav only (no footer). Bar is flush at bottom (no safe-area pad). */
