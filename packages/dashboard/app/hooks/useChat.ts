@@ -239,6 +239,26 @@ function mapChatMessageToInfo(message: ChatMessage): ChatMessageInfo {
   };
 }
 
+/**
+ * Fetch all messages for a session, paginating through the API's 200-message cap.
+ * Used for the initial full load so sessions with >50 messages are never truncated.
+ */
+async function fetchAllMessagesInChat(
+  sessionId: string,
+  projectId: string | undefined,
+): Promise<ChatMessageInfo[]> {
+  const PAGE = 200;
+  const all: ChatMessageInfo[] = [];
+  let offset = 0;
+  for (;;) {
+    const data = await fetchChatMessages(sessionId, { limit: PAGE, offset }, projectId);
+    all.push(...data.messages.map(mapChatMessageToInfo));
+    if (data.messages.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
+
 export function useChat(
   projectId?: string,
   addToast?: (msg: string, type?: "success" | "error" | "warning") => void,
@@ -451,18 +471,23 @@ export function useChat(
       }
 
       try {
-        const data = await fetchChatMessages(sessionId, { limit: 50, ...opts }, projectId);
-        const mappedMessages = data.messages.map(mapChatMessageToInfo);
         if (isPaginationRequest) {
-          // Prepend older messages
+          // Prepend older messages (forward pagination, used when hasMoreMessages)
+          const data = await fetchChatMessages(sessionId, { limit: 50, ...opts }, projectId);
+          const mappedMessages = data.messages.map(mapChatMessageToInfo);
           setMessages((prev) => [...mappedMessages, ...prev]);
+          setHasMoreMessages(data.messages.length >= 50);
         } else {
-          setMessages(mappedMessages);
-          if (cacheKey) {
-            writeCache(cacheKey, mappedMessages, { maxBytes: 500_000 });
+          // Initial full load — fetch all messages, never truncate at 50
+          const allMessages = await fetchAllMessagesInChat(sessionId, projectId);
+          if (activeSessionRef.current?.id === sessionId) {
+            setMessages(allMessages);
+            if (cacheKey) {
+              writeCache(cacheKey, allMessages, { maxBytes: 500_000 });
+            }
+            setHasMoreMessages(false); // all messages loaded — inside guard
           }
         }
-        setHasMoreMessages(data.messages.length >= 50);
       } catch {
         if (!isPaginationRequest && messagesRef.current.length === 0 && hasCachedMessages) {
           setMessages(cachedMessages);
