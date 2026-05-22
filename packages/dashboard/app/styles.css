@@ -3219,10 +3219,18 @@ input[type="range"]:focus-visible {
   html,
   body {
     overflow: hidden;
-    /* Disable pinch-zoom on mobile — Android Chrome ignores user-scalable=no
-       for a11y, and the kanban board's horizontally-scrollable layout
-       interacts badly with zoom-out (exposes the offscreen-right area).
-       `pan-x pan-y` keeps scroll panning but blocks pinch-zoom. */
+    /* Stop Chrome's overscroll/rubber-band on mobile — without this the user
+       can pull the page up to expose empty space above the dashboard. */
+    overscroll-behavior: none;
+  }
+
+  /* Disable pinch-zoom globally on mobile. Android Chrome ignores
+     `user-scalable=no` for a11y, and the kanban board's horizontally-
+     scrollable layout interacts badly with zoom-out (exposes the
+     offscreen-right area). `touch-action` is not inherited — it applies
+     to the target element only — so we have to set `pan-x pan-y`
+     (keep scroll panning, block pinch-zoom) on every element. */
+  * {
     touch-action: pan-x pan-y;
   }
 
