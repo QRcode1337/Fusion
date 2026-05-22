@@ -427,6 +427,8 @@ export function updateTask(
     prompt?: string;
     dependencies?: string[];
     enabledWorkflowSteps?: string[];
+    overlapBlockedBy?: string | null;
+    status?: null;
     modelProvider?: string | null;
     modelId?: string | null;
     validatorModelProvider?: string | null;

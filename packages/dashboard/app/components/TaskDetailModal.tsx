@@ -1953,6 +1953,46 @@ export function TaskDetailContent({
     }
   }, [task.id, dependencies, addToast]);
 
+  const handleClearOverlapBlocker = useCallback(async () => {
+    if (!workingTask.overlapBlockedBy) return;
+
+    const requestTaskId = task.id;
+    const previousOverlapBlockedBy = workingTask.overlapBlockedBy;
+    const previousStatus = workingTask.status;
+
+    setFullDetail((prev) => prev
+      ? {
+        ...prev,
+        overlapBlockedBy: undefined,
+        ...(previousStatus === "queued" ? { status: undefined } : {}),
+      }
+      : prev);
+
+    try {
+      const updatedTask = await updateTask(task.id, {
+        overlapBlockedBy: null,
+        status: previousStatus === "queued" ? null : undefined,
+      }, projectId);
+      if (activeTaskIdRef.current !== requestTaskId) {
+        return;
+      }
+      setFullDetail((prev) => prev ? ({ ...prev, ...updatedTask } as TaskDetail) : (updatedTask as TaskDetail));
+      onTaskUpdated?.(updatedTask);
+    } catch (err) {
+      if (activeTaskIdRef.current !== requestTaskId) {
+        return;
+      }
+      setFullDetail((prev) => prev
+        ? {
+          ...prev,
+          overlapBlockedBy: previousOverlapBlockedBy,
+          ...(previousStatus === "queued" ? { status: previousStatus } : {}),
+        }
+        : prev);
+      addToast(getErrorMessage(err), "error");
+    }
+  }, [activeTaskIdRef, addToast, onTaskUpdated, projectId, task.id, workingTask.overlapBlockedBy, workingTask.status]);
+
   const handleDepClick = useCallback(async (depId: string) => {
     try {
       const detail = await fetchTaskDetail(depId, projectId);
@@ -3245,8 +3285,18 @@ export function TaskDetailContent({
             )}
             {workingTask.overlapBlockedBy && (
               <div className="detail-empty-inline">
-                File scope overlap blocker: {workingTask.overlapBlockedBy}
-                {!overlapBlockerActive && " (stale)"}
+                <span>
+                  File scope overlap blocker: {workingTask.overlapBlockedBy}
+                  {!overlapBlockerActive && " (stale)"}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => void handleClearOverlapBlocker()}
+                  title={`Clear overlap blocker ${workingTask.overlapBlockedBy}`}
+                >
+                  Clear
+                </button>
               </div>
             )}
             <div className="dep-trigger-wrap">

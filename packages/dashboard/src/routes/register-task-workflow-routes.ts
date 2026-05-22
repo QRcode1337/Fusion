@@ -2377,7 +2377,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
   router.patch("/tasks/:id", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      const { title, description, prompt, priority, dependencies, enabledWorkflowSteps, modelProvider, modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, thinkingLevel, assigneeUserId, reviewLevel, executionMode, sourceIssue, nodeId, branch, baseBranch, githubTracking, noCommitsExpected } = req.body;
+      const { title, description, prompt, priority, dependencies, enabledWorkflowSteps, modelProvider, modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, thinkingLevel, assigneeUserId, reviewLevel, executionMode, sourceIssue, nodeId, branch, baseBranch, githubTracking, noCommitsExpected, overlapBlockedBy, status } = req.body;
       const hasBodyField = (field: string) => Object.prototype.hasOwnProperty.call(req.body, field);
 
       // Validate model fields are strings or undefined/null
@@ -2539,6 +2539,29 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         }
       }
 
+      let validatedOverlapBlockedBy: string | null | undefined;
+      if (hasBodyField("overlapBlockedBy")) {
+        if (overlapBlockedBy === null || overlapBlockedBy === undefined) {
+          validatedOverlapBlockedBy = overlapBlockedBy;
+        } else if (typeof overlapBlockedBy === "string") {
+          const trimmed = overlapBlockedBy.trim();
+          if (trimmed.length === 0) {
+            throw new Error("overlapBlockedBy must be a string or null");
+          }
+          validatedOverlapBlockedBy = trimmed;
+        } else {
+          throw new Error("overlapBlockedBy must be a string or null");
+        }
+      }
+
+      let validatedStatus: null | undefined;
+      if (hasBodyField("status")) {
+        if (status !== null) {
+          throw new Error("status may only be cleared via this endpoint (must be null)");
+        }
+        validatedStatus = null;
+      }
+
       const updates: Parameters<typeof scopedStore.updateTask>[1] = {};
       if (title !== undefined) updates.title = title;
       if (description !== undefined) updates.description = description;
@@ -2564,6 +2587,8 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       if (hasBodyField("githubTracking")) {
         (updates as Record<string, unknown>).githubTracking = validatedGithubTracking;
       }
+      if (hasBodyField("overlapBlockedBy")) updates.overlapBlockedBy = validatedOverlapBlockedBy;
+      if (hasBodyField("status")) updates.status = validatedStatus;
 
       if (hasBodyField("nodeId") && validatedNodeId !== undefined) {
         const currentTask = await scopedStore.getTask(req.params.id);
@@ -2608,7 +2633,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       if (err instanceof ApiError) {
         throw err;
       }
-      const status = (err instanceof Error ? err.message : String(err)).includes("must be a string") || (err instanceof Error ? err.message : String(err)).includes("must be a non-empty string") || (err instanceof Error ? err.message : String(err)).includes("must be a string or null") || (err instanceof Error ? err.message : String(err)).includes("must be an array of strings") || (err instanceof Error ? err.message : String(err)).includes("must be a boolean") || (err instanceof Error ? err.message : String(err)).includes("thinkingLevel must be one of") || (err instanceof Error ? err.message : String(err)).includes("reviewLevel must be an integer") || (err instanceof Error ? err.message : String(err)).includes("executionMode must be one of") || (err instanceof Error ? err.message : String(err)).includes("priority must be one of") || (err instanceof Error ? err.message : String(err)).includes("sourceIssue") ? 400 : 500;
+      const status = (err instanceof Error ? err.message : String(err)).includes("must be a string") || (err instanceof Error ? err.message : String(err)).includes("must be a non-empty string") || (err instanceof Error ? err.message : String(err)).includes("must be a string or null") || (err instanceof Error ? err.message : String(err)).includes("must be an array of strings") || (err instanceof Error ? err.message : String(err)).includes("must be a boolean") || (err instanceof Error ? err.message : String(err)).includes("thinkingLevel must be one of") || (err instanceof Error ? err.message : String(err)).includes("reviewLevel must be an integer") || (err instanceof Error ? err.message : String(err)).includes("executionMode must be one of") || (err instanceof Error ? err.message : String(err)).includes("priority must be one of") || (err instanceof Error ? err.message : String(err)).includes("sourceIssue") || (err instanceof Error ? err.message : String(err)).includes("status may only be cleared") ? 400 : 500;
       throw new ApiError(status, err instanceof Error ? err.message : String(err));
     }
   });
