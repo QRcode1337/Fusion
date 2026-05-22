@@ -314,7 +314,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   checkoutRunId TEXT,
   checkoutLeaseRenewedAt TEXT,
   checkoutLeaseEpoch INTEGER DEFAULT 0,
-  deletedAt TEXT
+  deletedAt TEXT,
+  allowResurrection INTEGER DEFAULT 0
 );
 
 -- Config table (single row with project settings)
@@ -3505,6 +3506,7 @@ export class Database {
 
     if (version < 88) {
       this.applyMigration(88, () => {
+        this.addColumnIfMissing("tasks", "allowResurrection", "INTEGER DEFAULT 0");
         try {
           const taskColumns = this.getTableColumns("tasks");
           const requiredColumns = ["paused", "userPaused", "pausedByAgentId", "pausedReason"];

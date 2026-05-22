@@ -3415,6 +3415,8 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       const removeLineageReferences = req.query.removeLineageReferences === "1"
         || req.query.removeLineageReferences === "true";
       const githubIssueActionRaw = req.query.githubIssueAction;
+      const allowResurrection = req.query.allowResurrection === "1"
+        || req.query.allowResurrection === "true";
       const githubIssueActionValues: readonly GithubIssueAction[] = ["close", "delete", "leave", "auto"];
       let githubIssueAction: GithubIssueAction | undefined;
       if (typeof githubIssueActionRaw === "string") {
@@ -3426,6 +3428,7 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       const task = await scopedStore.deleteTask(req.params.id, {
         removeDependencyReferences,
         removeLineageReferences,
+        allowResurrection,
         githubIssueAction,
         auditContext: {
           agentId: "system",

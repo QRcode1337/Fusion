@@ -1879,6 +1879,7 @@ export interface Task {
    *  todo/triage when resume state is not preserved. */
   executionCompletedAt?: string;
   deletedAt?: string;
+  allowResurrection?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1915,6 +1916,11 @@ export interface TaskCreateInput {
   title?: string;
   /** Optional lineage override for trusted replication/import paths only. */
   lineageId?: string;
+  /**
+   * Opt-in createTask override for soft-deleted ID reuse.
+   * Not persisted to storage.
+   */
+  forceResurrect?: boolean;
   description: string;
   /** Configured merge target/base branch for this task (task intent).
    *  Defaults to the project default branch when omitted. */
@@ -2701,6 +2707,9 @@ export interface ProjectSettings {
   heartbeatMultiplier?: number;
   /** Number of auto-claim candidates rendered in no-task heartbeat prompts. Range: 0-10. Default: 5. */
   autoClaimCandidatesInPrompt?: number;
+  /** Sticky window for intake duplicate checks against soft-deleted tasks.
+   * Unit: days. Default: 7. Set to 0 to disable tombstone-window widening. */
+  tombstoneStickyWindowDays?: number;
   /** Heartbeat scope-discipline procedure mode.
    * - "strict": coordination-focused scope discipline (default)
    * - "lite": pre-FN-3884 behavior

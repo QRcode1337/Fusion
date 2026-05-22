@@ -134,6 +134,7 @@ export {
   SelfDefeatingDependencyError,
   DependencyCycleError,
   TaskDeletedError,
+  TombstonedTaskResurrectionError,
   MergeQueueTaskNotFoundError,
   MergeQueueInvalidColumnError,
   MergeQueueLeaseOwnershipError,

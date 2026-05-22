@@ -188,6 +188,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   pollIntervalMs: 15000,
   heartbeatMultiplier: 1,
   autoClaimCandidatesInPrompt: 5,
+  tombstoneStickyWindowDays: 7,
   heartbeatScopeDiscipline: "strict",
   heartbeatPromptTemplate: "default",
   groupOverlappingFiles: true,
