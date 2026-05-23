@@ -11,6 +11,7 @@ import {
   resolveProjectDefaultModel,
   resolveTitleSummarizerSettingsModel,
   normalizeMergeIntegrationWorktreeMode,
+  normalizeMergeAdvanceAutoSyncMode,
 } from "@fusion/core";
 import type { AgentPermissionPolicyRules, Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent, AgentPromptsConfig, ThinkingLevel } from "@fusion/core";
 import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, cancelProviderLogin, saveApiKey, clearApiKey, fetchModels, testNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemoryFile, fetchMemoryFiles, saveMemoryFile, compactMemory, fetchGlobalConcurrency, updateGlobalConcurrency, installQmd, testMemoryRetrieval, triggerMemoryDreams, fetchGitRemotes, fetchGitRemotesDetailed, fetchProjects, fetchDashboardHealth, checkForUpdates, fetchRemoteSettings, updateRemoteSettings, fetchRemoteStatus, installCloudflared, startRemoteTunnel, stopRemoteTunnel, killExternalTunnel, regenerateRemotePersistentToken, generateShortLivedRemoteToken, fetchRemoteQr, fetchRemoteUrl, submitProviderManualCode } from "../api";
@@ -443,6 +444,7 @@ export function SettingsModal({
     autoMerge: true,
     mergeStrategy: "direct",
     mergeIntegrationWorktree: "reuse-task-worktree",
+    mergeAdvanceAutoSync: "stash-and-ff",
     recycleWorktrees: false,
     executorAllowSiblingBranchRename: false,
     worktreeNaming: "random",
@@ -688,6 +690,7 @@ export function SettingsModal({
         const normalizedSettings = {
           ...s,
           mergeIntegrationWorktree: normalizeMergeIntegrationWorktreeMode(s.mergeIntegrationWorktree),
+          mergeAdvanceAutoSync: normalizeMergeAdvanceAutoSyncMode(s.mergeAdvanceAutoSync),
         };
         setForm(normalizedSettings);
         setInitialValues(normalizedSettings); // Store initial values to detect explicit clears
@@ -699,6 +702,9 @@ export function SettingsModal({
             mergeIntegrationWorktree: scoped.project.mergeIntegrationWorktree === undefined
               ? undefined
               : normalizeMergeIntegrationWorktreeMode(scoped.project.mergeIntegrationWorktree),
+            mergeAdvanceAutoSync: scoped.project.mergeAdvanceAutoSync === undefined
+              ? undefined
+              : normalizeMergeAdvanceAutoSyncMode(scoped.project.mergeAdvanceAutoSync),
           },
         }); // Store initial scoped values for null-as-delete
         setLoading(false);
@@ -4672,6 +4678,40 @@ export function SettingsModal({
                       you have a specific reason to opt in (FN-5348).
                     </div>
                   )}
+                </div>
+                <div className="form-group">
+                  <label htmlFor="mergeAdvanceAutoSync">Auto-sync project checkout after merge</label>
+                  <select
+                    id="mergeAdvanceAutoSync"
+                    className="select"
+                    value={form.mergeAdvanceAutoSync ?? "stash-and-ff"}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        mergeAdvanceAutoSync: e.target.value as "off" | "ff-only" | "stash-and-ff",
+                      }))
+                    }
+                    data-testid="merge-advance-auto-sync-select"
+                  >
+                    <option value="stash-and-ff">Stash + fast-forward (default) — preserve local edits</option>
+                    <option value="ff-only">Fast-forward only — skip dirty worktrees</option>
+                    <option value="off">Off — leave the project root stale (legacy behavior)</option>
+                  </select>
+                  <details className="settings-option-details">
+                    <summary>More details</summary>
+                    <small>
+                      After Fusion advances the integration branch ref, the merger can auto-sync other
+                      worktrees still checked out on that branch (typically your project-root
+                      checkout). <code>Stash + fast-forward</code> snapshots real local edits as a patch
+                      against the previous tip, snaps the worktree to the new tip, then reapplies the
+                      patch — untracked files that collide with newly-tracked paths are left in a temp
+                      dir for manual recovery. <code>Fast-forward only</code> snaps cleanly when the
+                      worktree has no edits and skips otherwise. <code>Off</code> is the legacy
+                      behavior: <code>git status</code> in your project root will show the new commits
+                      inverted as &quot;staged changes&quot; until you pull manually. Only applies to direct
+                      merges.
+                    </small>
+                  </details>
                 </div>
               </>
             )}
