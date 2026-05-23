@@ -231,7 +231,7 @@ export function useMergeAdvanceNotice({ projectId, apiBase = "/api" }: { project
       }
       setPushState({
         error: response.message ?? response.outcome,
-        outcome: response.outcome,
+        outcome: response.outcome === "ok" ? "failed" : response.outcome,
         stderr: response.stderrPreview,
       });
     } catch (error: unknown) {

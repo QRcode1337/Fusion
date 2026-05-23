@@ -86,7 +86,11 @@ describe("useMergeAdvanceNotice", () => {
     const first = renderHook(() => useMergeAdvanceNotice({ projectId: "p1" }));
     await waitFor(() => expect(first.result.current.pushStatus).not.toBeNull());
     await act(async () => { await first.result.current.push(); });
-    expect(first.result.current.pushState).toMatchObject({ outcome: "rejected-non-ff" });
+    expect(first.result.current.pushState).toMatchObject({
+      outcome: "rejected-non-ff",
+      error: "Remote diverged",
+      stderr: "[rejected]",
+    });
     expect(first.result.current.pullState).toBe("idle");
 
     const second = renderHook(() => useMergeAdvanceNotice({ projectId: "p1" }));
@@ -94,6 +98,21 @@ describe("useMergeAdvanceNotice", () => {
     await act(async () => { await second.result.current.push(); });
     expect(second.result.current.pushState).toMatchObject({ outcome: "merge-locked" });
     expect(second.result.current.pullState).toBe("idle");
+  });
+
+  it("maps degenerate failed ok outcome to failed", async () => {
+    mocked.api.mockImplementationOnce(async () => eventPayload)
+      .mockImplementationOnce(async () => pushStatus)
+      .mockImplementationOnce(async () => ({ ok: false, outcome: "ok", message: "unexpected" }));
+
+    const { result } = renderHook(() => useMergeAdvanceNotice({ projectId: "p1" }));
+    await waitFor(() => expect(result.current.pushStatus).not.toBeNull());
+    await act(async () => { await result.current.push(); });
+
+    expect(result.current.pushState).toMatchObject({
+      outcome: "failed",
+      error: "unexpected",
+    });
   });
 
   it("does not poll on a timer", async () => {
