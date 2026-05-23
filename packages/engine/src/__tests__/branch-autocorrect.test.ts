@@ -74,7 +74,7 @@ describe("attemptBranchAutocorrect", () => {
     const result = await attemptBranchAutocorrect({ worktreePath: "/tmp/wt", observedBranch: "lemon-sage", expectedBranch: "fusion/fn-2", rootDir: "/tmp" });
 
     expect(result).toEqual({ status: "renamed" });
-    expect(mockedExec.mock.calls.map((c: unknown[]) => c[0])).toContain("git branch -m 'lemon-sage' 'fusion/fn-2'");
+    expect(mockedExec.mock.calls.map((c: unknown[]) => c[0])).toContain("git branch -M 'lemon-sage' 'fusion/fn-2'");
   });
 
   it("falls back to plain checkout when branch has upstream and expected ref exists", async () => {
@@ -87,7 +87,7 @@ describe("attemptBranchAutocorrect", () => {
     expect(result).toEqual({ status: "checked-out" });
     expect(mockedExec.mock.calls.map((c: unknown[]) => c[0])).toEqual([
       "git rev-parse --abbrev-ref --symbolic-full-name 'lemon-sage'@{u}",
-      "git rev-parse --verify --quiet 'fusion/fn-2'",
+      "git show-ref --verify --quiet refs/heads/'fusion/fn-2'",
       "git checkout 'fusion/fn-2'",
     ]);
   });
