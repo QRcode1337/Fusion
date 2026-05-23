@@ -91,22 +91,16 @@ function cleanupTmpDirsSync(): void {
 
 // Full-suite worker shutdown can skip Vitest's normal afterAll timing if the worker
 // is already draining, so keep a process-level sync cleanup backstop for kb-db-test-*.
-// Vitest's "forks" pool also sends SIGTERM when a test times out and the fork is
-// recycled — `beforeExit`/`exit` don't run in that path, so we also install
-// signal handlers that perform the sync sweep before re-raising.
+// (Signal handlers were tried here but vitest forks deliver SIGHUP/SIGTERM during
+// the suite — re-raising killed the runner. The lock-child kill in
+// `cleanupTmpDirsAsync`/`afterEach` covers the macOS file-handle case that was
+// the actual leak driver.)
 const processWithCleanupFlag = process as typeof process & {
   [TMP_DIR_CLEANUP_HOOK_KEY]?: boolean;
 };
 if (!processWithCleanupFlag[TMP_DIR_CLEANUP_HOOK_KEY]) {
   process.once("beforeExit", cleanupTmpDirsSync);
   process.once("exit", cleanupTmpDirsSync);
-  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
-    process.once(signal, () => {
-      cleanupTmpDirsSync();
-      // Re-raise with default disposition so the runner still observes the signal.
-      process.kill(process.pid, signal);
-    });
-  }
   processWithCleanupFlag[TMP_DIR_CLEANUP_HOOK_KEY] = true;
 }
 

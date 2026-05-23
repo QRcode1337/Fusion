@@ -35,12 +35,6 @@ const processWithCleanupFlag = process as typeof process & {
 if (!processWithCleanupFlag[TMP_DIR_CLEANUP_HOOK_KEY]) {
   process.once("beforeExit", cleanupTmpDirsSync);
   process.once("exit", cleanupTmpDirsSync);
-  for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
-    process.once(signal, () => {
-      cleanupTmpDirsSync();
-      process.kill(process.pid, signal);
-    });
-  }
   processWithCleanupFlag[TMP_DIR_CLEANUP_HOOK_KEY] = true;
 }
 
