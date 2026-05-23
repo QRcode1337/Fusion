@@ -70,6 +70,10 @@ export const STALE_ACTIVE_BRANCH_EXECUTION_GRACE_MS = 10 * 60_000;
 export const COMPLETION_HANDOFF_LIMBO_GRACE_MS = 5 * 60_000;
 export const MAX_COMPLETION_HANDOFF_LIMBO_RECOVERIES = 3;
 
+// listTasks already enforces ACTIVE_TASKS_WHERE (`"deletedAt" IS NULL`), but
+// deadlock/stall sweeps still defensively skip soft-deleted rows in case a
+// future caller bypasses that contract (includeDeleted, fixtures, ad-hoc SQL).
+
 export async function archiveAsGhostBug(
   store: TaskStore,
   taskId: string,
@@ -4580,6 +4584,7 @@ export class SelfHealingManager {
       let surfaced = 0;
 
       for (const task of tasks) {
+        if (task.deletedAt) continue;
         const signal = getInReviewStallReason(task, {
           now: cycleStartMs,
           activeMergeTaskId,
@@ -4715,6 +4720,7 @@ export class SelfHealingManager {
       let surfaced = 0;
 
       for (const task of tasks) {
+        if (task.deletedAt) continue;
         if (task.paused === true) continue;
         if (task.id === activeMergeTaskId || executingTaskIds.has(task.id)) continue;
 
@@ -4774,6 +4780,7 @@ export class SelfHealingManager {
       let surfaced = 0;
 
       for (const task of tasks) {
+        if (task.deletedAt) continue;
         if (task.paused !== true) continue;
         const signal = getStalePausedReviewSignal(task, {
           now: cycleStartMs,
@@ -5242,6 +5249,7 @@ export class SelfHealingManager {
       const tasks = await this.store.listTasks({ column: "in-review", slim: true });
 
       const mergedButNotDone = tasks.filter((t) =>
+        !t.deletedAt &&
         t.column === "in-review" &&
         t.mergeDetails?.mergeConfirmed === true,
       );
@@ -5356,6 +5364,7 @@ export class SelfHealingManager {
       }
 
       const candidates = inReview.filter((task) => {
+        if (task.deletedAt) return false;
         const cooldownStart = this.deadlockRecoveryCooldown.get(task.id) ?? 0;
         const cooldownElapsed = now - cooldownStart;
         const hasBlockedDependents = (dependentsByBlocker.get(task.id) ?? []).some(
@@ -5668,6 +5677,7 @@ export class SelfHealingManager {
       const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
       const tasks = await this.store.listTasks({ column: "in-review", slim: true });
       const candidates = tasks.filter((task) =>
+        !task.deletedAt &&
         task.column === "in-review" &&
         task.status === "failed" &&
         (task.mergeRetries ?? 0) >= MAX_AUTO_MERGE_RETRIES &&
