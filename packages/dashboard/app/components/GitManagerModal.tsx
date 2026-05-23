@@ -273,12 +273,12 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     try {
       switch (activeSection) {
         case "status": {
-          const statusData = await fetchGitStatus(projectId);
+          const statusData = await fetchGitStatus(projectId, { extended: true });
           setStatus(statusData);
           break;
         }
         case "changes": {
-          const [statusData, changes] = await Promise.all([fetchGitStatus(projectId), fetchFileChanges(projectId)]);
+          const [statusData, changes] = await Promise.all([fetchGitStatus(projectId, { extended: true }), fetchFileChanges(projectId)]);
           setStatus(statusData);
           setFileChanges(changes);
           setSelectedFiles(new Set());
@@ -293,7 +293,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
           break;
         }
         case "branches": {
-          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(projectId), fetchGitStatus(projectId)]);
+          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(projectId), fetchGitStatus(projectId, { extended: true })]);
           setBranches(branchesData);
           setStatus(statusForBranch);
           break;
@@ -313,7 +313,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
           break;
         }
         case "remotes": {
-          const remoteStatus = await fetchGitStatus(projectId);
+          const remoteStatus = await fetchGitStatus(projectId, { extended: true });
           setStatus(remoteStatus);
           break;
         }
@@ -398,7 +398,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     try {
       await discardChanges(files, projectId);
       addToast(`Discarded changes to ${files.length} file(s)`, "success");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedFiles(new Set());
@@ -419,7 +419,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
       addToast(`Committed: ${result.hash}`, "success");
       setCommitMessage("");
       // Refresh changes and status
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedDiffTarget(null);
@@ -443,7 +443,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
       const result = await createCommit(commitMessage.trim(), projectId);
       addToast(`Committed: ${result.hash}`, "success");
       setCommitMessage("");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId, { extended: true })]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedDiffTarget(null);
@@ -557,7 +557,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
     try {
       await checkoutBranch(name, projectId);
       addToast(`Switched to ${name}`, "success");
-      const [statusData, branchesData] = await Promise.all([fetchGitStatus(projectId), fetchGitBranches(projectId)]);
+      const [statusData, branchesData] = await Promise.all([fetchGitStatus(projectId, { extended: true }), fetchGitBranches(projectId)]);
       setStatus(statusData);
       setBranches(branchesData);
     } catch (err) {
@@ -768,7 +768,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
       const result = await fetchRemote(undefined, projectId);
       setLastRemoteResult(result);
       addToast(result.message || "Fetch completed", result.fetched ? "success" : "info");
-      const statusData = await fetchGitStatus(projectId);
+      const statusData = await fetchGitStatus(projectId, { extended: true });
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || "Fetch failed", "error");
@@ -788,7 +788,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
         const fallbackMessage = options?.rebase ? "Pull --rebase completed" : "Pull completed";
         addToast(result.message || fallbackMessage, "success");
       }
-      const statusData = await fetchGitStatus(projectId);
+      const statusData = await fetchGitStatus(projectId, { extended: true });
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || "Pull failed", "error");
@@ -803,7 +803,7 @@ export function GitManagerModal({ isOpen, onClose, tasks: _tasks, addToast, proj
       const result = await pushBranch(projectId);
       setLastRemoteResult(result);
       addToast(result.message || "Push completed", "success");
-      const statusData = await fetchGitStatus(projectId);
+      const statusData = await fetchGitStatus(projectId, { extended: true });
       setStatus(statusData);
     } catch (err) {
       addToast(getErrorMessage(err) || "Push failed", "error");
@@ -1022,6 +1022,11 @@ function StatusPanel({
           <span className="gm-status-value">
             <GitBranchIcon size={14} />
             <span>{status.branch}</span>
+            {status.integrationBranch && status.isOnIntegrationBranch === false && (
+              <span className="gm-status-sub" title="Currently on a non-integration branch">
+                {" "}(not on {status.integrationBranch})
+              </span>
+            )}
           </span>
         </div>
         <div className="gm-status-card">
@@ -1030,7 +1035,7 @@ function StatusPanel({
             <code className="gm-hash">{status.commit}</code>
             <button
               className="gm-icon-btn"
-              onClick={() => copyToClipboard(status.commit, "commit hash")}
+              onClick={() => copyToClipboard(status.headSha ?? status.commit, "commit hash")}
               title="Copy commit hash"
             >
               <Copy size={12} />
@@ -1052,18 +1057,33 @@ function StatusPanel({
               </>
             )}
           </span>
+          {status.dirtyDetails && (status.dirtyDetails.staged + status.dirtyDetails.modified + status.dirtyDetails.untracked + status.dirtyDetails.conflicted) > 0 && (
+            <span className="gm-status-sub">
+              {status.dirtyDetails.staged > 0 && <span title="Staged">{status.dirtyDetails.staged} staged</span>}
+              {status.dirtyDetails.staged > 0 && (status.dirtyDetails.modified + status.dirtyDetails.untracked + status.dirtyDetails.conflicted) > 0 && " · "}
+              {status.dirtyDetails.modified > 0 && <span title="Modified">{status.dirtyDetails.modified} modified</span>}
+              {status.dirtyDetails.modified > 0 && (status.dirtyDetails.untracked + status.dirtyDetails.conflicted) > 0 && " · "}
+              {status.dirtyDetails.untracked > 0 && <span title="Untracked">{status.dirtyDetails.untracked} untracked</span>}
+              {status.dirtyDetails.untracked > 0 && status.dirtyDetails.conflicted > 0 && " · "}
+              {status.dirtyDetails.conflicted > 0 && (
+                <span title="Unresolved merge conflicts" className="gm-status-conflict">
+                  {status.dirtyDetails.conflicted} conflicted
+                </span>
+              )}
+            </span>
+          )}
         </div>
         <div className="gm-status-card">
-          <span className="gm-status-label">Remote Sync</span>
+          <span className="gm-status-label">vs origin</span>
           <span className="gm-status-value">
             {status.ahead > 0 && (
-              <span className="gm-ahead" title={`${status.ahead} commit(s) ahead`}>
+              <span className="gm-ahead" title={`${status.ahead} commit(s) ahead of upstream`}>
                 <ArrowUp size={12} />
                 {status.ahead}
               </span>
             )}
             {status.behind > 0 && (
-              <span className="gm-behind" title={`${status.behind} commit(s) behind`}>
+              <span className="gm-behind" title={`${status.behind} commit(s) behind upstream`}>
                 <ArrowDown size={12} />
                 {status.behind}
               </span>
@@ -1077,6 +1097,138 @@ function StatusPanel({
           </span>
         </div>
       </div>
+      {status.integrationBranch && (
+        <div className="gm-status-grid">
+          <div className="gm-status-card" data-testid="integration-branch-card">
+            <span className="gm-status-label">Integration branch</span>
+            <span className="gm-status-value">
+              <GitBranchIcon size={14} />
+              <span>{status.integrationBranch}</span>
+              {status.integrationBranchSource && (
+                <span className="gm-status-sub" title={`Resolved from ${status.integrationBranchSource}`}>
+                  {" "}({status.integrationBranchSource})
+                </span>
+              )}
+            </span>
+            {status.integrationTipSha && (
+              <span className="gm-status-sub">
+                tip <code className="gm-hash">{status.integrationTipSha.slice(0, 8)}</code>
+              </span>
+            )}
+          </div>
+          {status.integrationTipSha !== undefined && (status.aheadOfIntegration !== undefined || status.behindIntegration !== undefined) && (
+            <div className="gm-status-card">
+              <span className="gm-status-label">HEAD vs {status.integrationBranch}</span>
+              <span className="gm-status-value">
+                {(status.aheadOfIntegration ?? 0) === 0 && (status.behindIntegration ?? 0) === 0 ? (
+                  <span className="gm-in-sync">
+                    <CheckCircle size={12} />
+                    Aligned
+                  </span>
+                ) : (
+                  <>
+                    {(status.aheadOfIntegration ?? 0) > 0 && (
+                      <span className="gm-ahead" title={`HEAD has ${status.aheadOfIntegration} commit(s) not on ${status.integrationBranch}`}>
+                        <ArrowUp size={12} />
+                        {status.aheadOfIntegration}
+                      </span>
+                    )}
+                    {(status.behindIntegration ?? 0) > 0 && (
+                      <span className="gm-behind" title={`${status.integrationBranch} has ${status.behindIntegration} commit(s) HEAD doesn't`}>
+                        <ArrowDown size={12} />
+                        {status.behindIntegration}
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+          {status.originIntegrationTipSha !== undefined && (
+            <div className="gm-status-card">
+              <span className="gm-status-label">Local {status.integrationBranch} vs origin</span>
+              <span className="gm-status-value">
+                {status.originIntegrationTipSha === null ? (
+                  <span className="gm-status-sub">no origin tracking</span>
+                ) : (status.aheadOfOriginIntegration ?? 0) === 0 && (status.behindOriginIntegration ?? 0) === 0 ? (
+                  <span className="gm-in-sync">
+                    <CheckCircle size={12} />
+                    Synced
+                  </span>
+                ) : (
+                  <>
+                    {(status.aheadOfOriginIntegration ?? 0) > 0 && (
+                      <span className="gm-ahead" title={`Local ${status.integrationBranch} is ${status.aheadOfOriginIntegration} commit(s) ahead of origin/${status.integrationBranch}`}>
+                        <ArrowUp size={12} />
+                        {status.aheadOfOriginIntegration}
+                      </span>
+                    )}
+                    {(status.behindOriginIntegration ?? 0) > 0 && (
+                      <span className="gm-behind" title={`Local ${status.integrationBranch} is ${status.behindOriginIntegration} commit(s) behind origin/${status.integrationBranch}`}>
+                        <ArrowDown size={12} />
+                        {status.behindOriginIntegration}
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
+            </div>
+          )}
+          {(status.stashCount ?? 0) > 0 && (
+            <div className="gm-status-card">
+              <span className="gm-status-label">Stashes</span>
+              <span className="gm-status-value">
+                <Archive size={14} />
+                <span>{status.stashCount}</span>
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+      {status.indexStaleVsHead === true && (
+        <div className="gm-status-warning" data-testid="index-stale-warning" role="alert">
+          <AlertCircle size={14} />
+          <div>
+            <strong>Stale index detected.</strong>{" "}
+            HEAD has advanced (typically because Fusion's merger updated the integration-branch ref)
+            but the index still reflects the previous tip — `git status` will report the new commits
+            inverted as &quot;staged changes.&quot; Enable <code>mergeAdvanceAutoSync</code> in Settings to
+            have the merger reconcile automatically, or run <code>git reset --hard HEAD</code> to
+            snap forward manually.
+          </div>
+        </div>
+      )}
+      {(status.recentMergeAdvances ?? []).length > 0 && (
+        <div className="gm-status-advances" data-testid="recent-merge-advances">
+          <div className="gm-status-advances-header">
+            Recent integration-branch advances
+            <span className="gm-status-sub">
+              {" "}({(status.recentMergeAdvances ?? []).filter((a) => a.needsAction).length} need action)
+            </span>
+          </div>
+          <ul>
+            {(status.recentMergeAdvances ?? []).map((advance) => (
+              <li key={`${advance.taskId}-${advance.toSha}`} className={advance.needsAction ? "gm-advance-needs-action" : "gm-advance-handled"}>
+                <code className="gm-hash">{advance.toSha.slice(0, 8)}</code>
+                {" "}
+                <strong>{advance.taskId}</strong>
+                {advance.autoSyncOutcome ? (
+                  <span className="gm-status-sub">
+                    {" "}auto-sync: <code>{advance.autoSyncOutcome}</code>
+                  </span>
+                ) : (
+                  <span className="gm-status-sub">
+                    {" "}auto-sync: <em>off / not run</em>
+                  </span>
+                )}
+                <span className="gm-status-sub">
+                  {" "}· {new Date(advance.advancedAt).toLocaleTimeString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -2578,6 +2578,34 @@ export interface GitStatus {
   isDirty: boolean;
   ahead: number;
   behind: number;
+  // Returned only when `?extended=1` is passed to GET /api/git/status.
+  headSha?: string;
+  integrationBranch?: string;
+  integrationBranchSource?: "settings" | "origin-head" | "fallback";
+  isOnIntegrationBranch?: boolean;
+  integrationTipSha?: string | null;
+  originIntegrationTipSha?: string | null;
+  aheadOfIntegration?: number;
+  behindIntegration?: number;
+  aheadOfOriginIntegration?: number;
+  behindOriginIntegration?: number;
+  dirtyDetails?: {
+    staged: number;
+    modified: number;
+    untracked: number;
+    conflicted: number;
+    sample: string[];
+  };
+  indexStaleVsHead?: boolean;
+  stashCount?: number;
+  recentMergeAdvances?: Array<{
+    taskId: string;
+    fromSha: string | null;
+    toSha: string;
+    advancedAt: string;
+    autoSyncOutcome?: string;
+    needsAction: boolean;
+  }>;
 }
 
 /** Git commit info */
@@ -2630,9 +2658,15 @@ export interface GitPushResult {
   message: string;
 }
 
-/** Fetch current git status */
-export function fetchGitStatus(projectId?: string): Promise<GitStatus> {
-  return api<GitStatus>(withProjectId("/git/status", projectId));
+/** Fetch current git status. Pass `extended` to also get integration-branch
+ *  resolution, ahead/behind vs both local and origin integration tip, dirty
+ *  breakdown, stash count, index-stale detection, and recent merge-advance
+ *  audit events for the project-root worktree. */
+export function fetchGitStatus(projectId?: string, opts?: { extended?: boolean }): Promise<GitStatus> {
+  const base = withProjectId("/git/status", projectId);
+  if (!opts?.extended) return api<GitStatus>(base);
+  const sep = base.includes("?") ? "&" : "?";
+  return api<GitStatus>(`${base}${sep}extended=1`);
 }
 
 /** Fetch recent commits */

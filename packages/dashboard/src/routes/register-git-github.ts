@@ -9,6 +9,7 @@ import type {
   DirectMergeCommitStrategy,
   IssueInfo,
   PrInfo,
+  RunAuditEvent,
   RunAuditEventInput,
   Settings,
   StructuredGhError,
@@ -391,6 +392,234 @@ export async function getGitStatus(cwd?: string): Promise<{
   } catch {
     return null;
   }
+}
+
+export interface ExtendedGitStatus {
+  headSha?: string;
+  integrationBranch?: string;
+  integrationBranchSource?: "settings" | "origin-head" | "fallback";
+  isOnIntegrationBranch?: boolean;
+  integrationTipSha?: string | null;
+  originIntegrationTipSha?: string | null;
+  aheadOfIntegration?: number;
+  behindIntegration?: number;
+  aheadOfOriginIntegration?: number;
+  behindOriginIntegration?: number;
+  dirtyDetails?: {
+    staged: number;
+    modified: number;
+    untracked: number;
+    conflicted: number;
+    sample: string[];
+  };
+  indexStaleVsHead?: boolean;
+  stashCount?: number;
+  recentMergeAdvances?: Array<{
+    taskId: string;
+    fromSha: string | null;
+    toSha: string;
+    advancedAt: string;
+    autoSyncOutcome?: string;
+    needsAction: boolean;
+  }>;
+}
+
+async function resolveIntegrationBranchForStatus(
+  cwd: string,
+  settings: { integrationBranch?: unknown; baseBranch?: unknown } | null | undefined,
+): Promise<{ branch: string; source: "settings" | "origin-head" | "fallback" }> {
+  const explicit = typeof settings?.integrationBranch === "string" ? settings.integrationBranch.trim() : "";
+  if (explicit.length > 0) return { branch: explicit, source: "settings" };
+  const legacyBase = typeof settings?.baseBranch === "string" ? (settings.baseBranch as string).trim() : "";
+  if (legacyBase.length > 0) return { branch: legacyBase, source: "settings" };
+  try {
+    const ref = (await runGitCommand(["symbolic-ref", "refs/remotes/origin/HEAD"], cwd, 5_000)).trim();
+    const m = /^refs\/remotes\/origin\/(.+)$/.exec(ref);
+    if (m) return { branch: m[1], source: "origin-head" };
+  } catch {
+    // fall through
+  }
+  return { branch: "main", source: "fallback" };
+}
+
+async function revParse(cwd: string, ref: string): Promise<string | null> {
+  try {
+    const out = (await runGitCommand(["rev-parse", "--verify", ref], cwd, 5_000)).trim();
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+async function aheadBehind(cwd: string, leftRef: string, rightRef: string): Promise<{ ahead: number; behind: number } | null> {
+  try {
+    const out = (await runGitCommand(["rev-list", "--left-right", "--count", `${leftRef}...${rightRef}`], cwd, 5_000)).trim();
+    const m = out.match(/(\d+)\s+(\d+)/);
+    if (!m) return null;
+    return { ahead: parseInt(m[1], 10), behind: parseInt(m[2], 10) };
+  } catch {
+    return null;
+  }
+}
+
+async function computeDirtyDetails(cwd: string): Promise<ExtendedGitStatus["dirtyDetails"]> {
+  try {
+    const out = await runGitCommand(["-c", "core.quotePath=false", "status", "--porcelain=v1", "--untracked-files=all"], cwd, 10_000);
+    let staged = 0, modified = 0, untracked = 0, conflicted = 0;
+    const sample: string[] = [];
+    for (const line of out.split("\n")) {
+      if (!line) continue;
+      const x = line[0] ?? " ";
+      const y = line[1] ?? " ";
+      const path = line.slice(3);
+      if (sample.length < 12) sample.push(`${x}${y} ${path}`);
+      if (x === "?" && y === "?") { untracked += 1; continue; }
+      if (x === "U" || y === "U" || (x === "A" && y === "A") || (x === "D" && y === "D")) { conflicted += 1; continue; }
+      if (x !== " " && x !== "?") staged += 1;
+      if (y !== " " && y !== "?") modified += 1;
+    }
+    return { staged, modified, untracked, conflicted, sample };
+  } catch {
+    return { staged: 0, modified: 0, untracked: 0, conflicted: 0, sample: [] };
+  }
+}
+
+async function isIndexStale(cwd: string): Promise<boolean | undefined> {
+  // The FN-INDEX-DESYNC scenario: the merger advanced refs/heads/<branch>
+  // locally so HEAD points at the new tip, but the index still reflects the
+  // previous tip. Detect by diffing the index tree against HEAD's tree —
+  // when the worktree is "clean" relative to HEAD (i.e. all `git status`
+  // changes are really inverted-index artifacts), this returns true.
+  try {
+    const idx = (await runGitCommand(["diff", "--cached", "--name-only"], cwd, 5_000)).trim();
+    if (idx.length === 0) return false;
+    const wt = (await runGitCommand(["diff", "--name-only"], cwd, 5_000)).trim();
+    // Index disagrees with HEAD but worktree matches index — that's the
+    // tell-tale stale-index signal. The merger's auto-sync hook would
+    // normally clear it; surfacing it lets operators see when sync was off
+    // or had to skip.
+    return idx.length > 0 && wt.length === 0;
+  } catch {
+    return undefined;
+  }
+}
+
+async function computeStashCount(cwd: string): Promise<number | undefined> {
+  try {
+    const out = (await runGitCommand(["stash", "list", "--format=%H"], cwd, 5_000)).trim();
+    if (out.length === 0) return 0;
+    return out.split("\n").filter((l) => l.length > 0).length;
+  } catch {
+    return undefined;
+  }
+}
+
+async function collectRecentMergeAdvances(
+  scopedStore: TaskStore & {
+    getRunAuditEvents?: (filters: {
+      taskId?: string;
+      domain?: "database" | "git" | "filesystem" | "sandbox";
+      mutationType?: string;
+      limit?: number;
+    }) => RunAuditEvent[];
+  },
+  worktreePath: string,
+): Promise<ExtendedGitStatus["recentMergeAdvances"]> {
+  if (typeof scopedStore.getRunAuditEvents !== "function") return [];
+  const advances = scopedStore.getRunAuditEvents({
+    domain: "git",
+    mutationType: "merge:integration-ref-advance",
+    limit: 10,
+  });
+  const autoSyncByTask = new Map<string, string>();
+  for (const ev of scopedStore.getRunAuditEvents({
+    domain: "git",
+    mutationType: "merge:auto-sync",
+    limit: 50,
+  })) {
+    const md = ev.metadata as { worktreePath?: unknown; outcome?: unknown; taskId?: unknown } | undefined;
+    if (!md || typeof md !== "object") continue;
+    if (typeof md.worktreePath !== "string" || md.worktreePath !== worktreePath) continue;
+    if (typeof md.outcome !== "string") continue;
+    const tid = typeof md.taskId === "string" ? md.taskId : (typeof ev.taskId === "string" ? ev.taskId : "");
+    if (tid && !autoSyncByTask.has(tid)) autoSyncByTask.set(tid, md.outcome);
+  }
+  const successOutcomes = new Set(["clean-sync", "synced-with-edits-restored"]);
+  const out: NonNullable<ExtendedGitStatus["recentMergeAdvances"]> = [];
+  for (const ev of advances) {
+    const md = ev.metadata as { fromSha?: unknown; toSha?: unknown; succeeded?: unknown } | undefined;
+    if (!md || typeof md !== "object") continue;
+    if (typeof md.toSha !== "string") continue;
+    if (md.succeeded === false) continue;
+    const tid = typeof ev.taskId === "string" ? ev.taskId : "";
+    if (!tid) continue;
+    const autoSyncOutcome = autoSyncByTask.get(tid);
+    out.push({
+      taskId: tid,
+      fromSha: typeof md.fromSha === "string" ? md.fromSha : null,
+      toSha: md.toSha,
+      advancedAt: ev.timestamp,
+      autoSyncOutcome,
+      needsAction: autoSyncOutcome === undefined || !successOutcomes.has(autoSyncOutcome),
+    });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+export async function computeExtendedGitStatus(rootDir: string, scopedStore: TaskStore): Promise<ExtendedGitStatus> {
+  const settings = await scopedStore.getSettings().catch(() => null);
+  const { branch: integrationBranch, source: integrationBranchSource } = await resolveIntegrationBranchForStatus(
+    rootDir,
+    settings as { integrationBranch?: unknown; baseBranch?: unknown } | null,
+  );
+  const currentBranch = (await runGitCommand(["branch", "--show-current"], rootDir, 5_000)).trim();
+  const isOnIntegrationBranch = currentBranch === integrationBranch;
+  const headSha = (await revParse(rootDir, "HEAD")) ?? undefined;
+  const integrationTipSha = await revParse(rootDir, `refs/heads/${integrationBranch}`);
+  const originIntegrationTipSha = await revParse(rootDir, `refs/remotes/origin/${integrationBranch}`);
+
+  let aheadOfIntegration: number | undefined;
+  let behindIntegration: number | undefined;
+  if (integrationTipSha && headSha) {
+    const ab = await aheadBehind(rootDir, "HEAD", integrationTipSha);
+    if (ab) { aheadOfIntegration = ab.ahead; behindIntegration = ab.behind; }
+  }
+  let aheadOfOriginIntegration: number | undefined;
+  let behindOriginIntegration: number | undefined;
+  if (originIntegrationTipSha && integrationTipSha) {
+    const ab = await aheadBehind(rootDir, integrationTipSha, originIntegrationTipSha);
+    if (ab) { aheadOfOriginIntegration = ab.ahead; behindOriginIntegration = ab.behind; }
+  }
+
+  const [dirtyDetails, indexStaleVsHead, stashCount, recentMergeAdvances] = await Promise.all([
+    computeDirtyDetails(rootDir),
+    isIndexStale(rootDir),
+    computeStashCount(rootDir),
+    collectRecentMergeAdvances(
+      scopedStore as TaskStore & {
+        getRunAuditEvents?: (filters: { taskId?: string; domain?: "database" | "git" | "filesystem" | "sandbox"; mutationType?: string; limit?: number }) => RunAuditEvent[];
+      },
+      rootDir,
+    ),
+  ]);
+
+  return {
+    headSha,
+    integrationBranch,
+    integrationBranchSource,
+    isOnIntegrationBranch,
+    integrationTipSha,
+    originIntegrationTipSha,
+    aheadOfIntegration,
+    behindIntegration,
+    aheadOfOriginIntegration,
+    behindOriginIntegration,
+    dirtyDetails,
+    indexStaleVsHead,
+    stashCount,
+    recentMergeAdvances,
+  };
 }
 
 export interface GitCommit {
@@ -2169,9 +2398,14 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
   });
 
   /**
-   * GET /api/git/status
+   * GET /api/git/status[?extended=1]
    * Returns current git status: branch, commit hash, dirty state, ahead/behind counts.
-   * Response: { branch: string, commit: string, isDirty: boolean, ahead: number, behind: number }
+   * When `extended=1` is set, also returns integration-branch resolution, ahead/
+   * behind vs both local and origin integration tip, dirty breakdown, stash count,
+   * index-stale detection (the FN-INDEX-DESYNC scenario the auto-sync hook
+   * fixes), and the most-recent merger ref-advance audit events for this
+   * worktree (so operators can see what needs to be pulled even if the
+   * Merge Advance Notice banner was dismissed).
    */
   router.get("/git/status", async (req, res) => {
     try {
@@ -2184,7 +2418,12 @@ export function registerGitGitHubRoutes(ctx: ApiRoutesContext): void {
       if (!status) {
         throw internalError("Failed to get git status");
       }
-      res.json(status);
+      if (req.query.extended !== "1" && req.query.extended !== "true") {
+        res.json(status);
+        return;
+      }
+      const extended = await computeExtendedGitStatus(rootDir, scopedStore);
+      res.json({ ...status, ...extended });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

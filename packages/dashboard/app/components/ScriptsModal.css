@@ -1899,6 +1899,84 @@
   color: var(--text);
 }
 
+.gm-status-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.gm-status-conflict {
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+
+.gm-status-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  margin-top: var(--space-md);
+  background: color-mix(in srgb, var(--warning, #f4b400) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning, #f4b400) 40%, transparent);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.gm-status-warning svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning, #f4b400);
+}
+
+.gm-status-warning code {
+  background: var(--card);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.gm-status-advances {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.gm-status-advances-header {
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-sm);
+}
+
+.gm-status-advances ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.gm-status-advances li {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.gm-status-advances .gm-advance-needs-action {
+  background: color-mix(in srgb, var(--warning, #f4b400) 8%, transparent);
+}
+
+.gm-status-advances .gm-advance-handled {
+  background: color-mix(in srgb, var(--success, #27ae60) 6%, transparent);
+  color: var(--text-muted);
+}
+
 .gm-status-badge {
   display: inline-flex;
   align-items: center;
