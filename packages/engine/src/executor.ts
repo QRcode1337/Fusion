@@ -1,3 +1,4 @@
+// port-4040-allowlist: this file embeds the "never kill port 4040" rule in the executor prompt.
 import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 
