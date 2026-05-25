@@ -97,6 +97,20 @@ Behavior:
 - Nodes support manual drag repositioning with a 4px movement threshold to separate click from drag, using pointer capture and zoom-aware delta scaling for reliable tracking
 - Custom node positions persist per project in browser localStorage (`kb:${projectId}:fusion-plugin-dependency-graph:positions`) across refresh/project switches, and **Fit to graph** clears saved positions and restores auto-layout
 
+## Planning Mode
+
+Planning Mode now includes branch controls on the summary screen before you create a task.
+
+- **Branch strategy** options mirror Subtask Breakdown semantics:
+  - `Use project/default branch`
+  - `Create auto-named branch per task`
+  - `Use existing branch`
+  - `Create custom new branch`
+- **Branch name** is required when using `existing` or `custom new` strategies.
+- **Merge target / base branch (optional)** lets you set the PR base branch (for example `main` or `develop`).
+
+These values are sent with the Planning Mode create-task request as `branchSelection`, so created tasks persist branch/base-branch settings consistently with other branch-aware task creation flows.
+
 ## Chat View
 
 Chat view provides project-scoped conversations with agents.

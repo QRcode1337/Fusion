@@ -3361,10 +3361,24 @@ export function createTaskFromPlanning(
   sessionId: string,
   summary?: PlanningSummary,
   projectId?: string,
+  options?: {
+    branch?: string;
+    baseBranch?: string;
+    branchSelection?: {
+      mode: "project-default" | "auto-new" | "existing" | "custom-new";
+      branchName?: string;
+      baseBranch?: string;
+    };
+  },
 ): Promise<Task> {
   return api<Task>(withProjectId("/planning/create-task", projectId), {
     method: "POST",
-    body: JSON.stringify(summary ? { sessionId, summary } : { sessionId }),
+    body: JSON.stringify({
+      ...(summary ? { sessionId, summary } : { sessionId }),
+      ...(options?.branch !== undefined ? { branch: options.branch } : {}),
+      ...(options?.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
+      ...(options?.branchSelection ? { branchSelection: options.branchSelection } : {}),
+    }),
   });
 }
 
