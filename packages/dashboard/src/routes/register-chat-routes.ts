@@ -478,10 +478,7 @@ export function registerChatRoutes(ctx: ApiRoutesContext, deps: ChatRouteDeps): 
    */
   router.get("/chat/sessions/:id/stream", rateLimit(RATE_LIMITS.sse), async (req, res) => {
     try {
-      const chatStore = options?.chatStore;
-      if (!chatStore) {
-        throw internalError("Chat store not available");
-      }
+      const { chatStore } = await resolveScopedChatStore(req.query.projectId as string | undefined);
       const chatManager = await resolveScopedChatManager(req.query.projectId as string | undefined);
 
       const sessionId = String(req.params.id);
@@ -567,10 +564,7 @@ export function registerChatRoutes(ctx: ApiRoutesContext, deps: ChatRouteDeps): 
    */
   router.post("/chat/sessions/:id/messages", rateLimit(RATE_LIMITS.sse), async (req, res) => {
     try {
-      const chatStore = options?.chatStore;
-      if (!chatStore) {
-        throw internalError("Chat store not available");
-      }
+      const { chatStore } = await resolveScopedChatStore(req.query.projectId as string | undefined);
 
       const { content, modelProvider, modelId, attachments } = req.body as {
         content?: string;
