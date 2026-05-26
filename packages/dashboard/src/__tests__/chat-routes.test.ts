@@ -10,6 +10,7 @@ import { createCoreMock, createEngineMock } from "../test/mockCoreEngine.js";
 function createSSERequest(): Request {
   const emitter = new EventEmitter();
   emitter.setMaxListeners(50);
+  (emitter as any).query = {};  // required: routes read req.query.projectId
   return emitter as unknown as Request;
 }
 
