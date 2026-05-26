@@ -1,0 +1,41 @@
+name: Desktop Windows Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build desktop package
+        run: pnpm --filter @fusion/desktop build
+
+      # Code-signing via WINDOWS_CERTIFICATE_BASE64 / WINDOWS_CERTIFICATE_PASSWORD is intentionally deferred to a follow-up task.
+      - name: Package Windows artifacts
+        run: pnpm --filter @fusion/desktop exec electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fusion-desktop-windows
+          path: |
+            packages/desktop/dist-electron/*.exe
+            packages/desktop/dist-electron/*.blockmap

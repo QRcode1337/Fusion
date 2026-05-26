@@ -26,7 +26,8 @@
     "typecheck": "tsc --noEmit",
     "generate:icons": "tsx scripts/generate-icons.ts",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win"
   },
   "dependencies": {
     "@fusion/core": "workspace:*",

@@ -56,7 +56,8 @@
     "mobile:dev:ios": "pnpm --filter @fusion/mobile dev:ios",
     "mobile:dev:android": "pnpm --filter @fusion/mobile dev:android",
     "mobile:sync": "pnpm --filter @fusion/mobile cap sync",
-    "build:desktop": "pnpm --filter @fusion/desktop build"
+    "build:desktop": "pnpm --filter @fusion/desktop build",
+    "dist:desktop:win": "pnpm --filter @fusion/desktop build && pnpm --filter @fusion/desktop dist:win"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

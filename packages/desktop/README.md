@@ -340,6 +340,8 @@ Tray icons are generated from `packages/dashboard/app/public/logo.svg`.
 - `pnpm --filter @fusion/desktop generate:icons` — regenerate tray icon PNG assets from the dashboard logo SVG
 - `pnpm --filter @fusion/desktop pack` — generate unpacked artifacts via electron-builder (`--dir`)
 - `pnpm --filter @fusion/desktop dist` — generate installable desktop artifacts via electron-builder
+- `pnpm --filter @fusion/desktop dist:win` — generate Windows installable artifacts (`--win`)
+- `pnpm dist:desktop:win` — workspace alias to build desktop assets then run Windows packaging
 
 ## Packaging
 
@@ -347,6 +349,9 @@ Desktop packaging is configured in `electron-builder.yml`.
 
 - Output directory: `packages/desktop/dist-electron`
 - Targets: macOS (`dmg`, `zip`), Windows (`nsis`, `portable`), Linux (`AppImage`, `deb`, `tar.gz`)
+- Windows artifacts: `Fusion-<version>-win-<arch>.exe` (NSIS installer) and portable `.exe` in `packages/desktop/dist-electron/`
+- Canonical Windows build path: `.github/workflows/desktop-windows.yml` (`workflow_dispatch` on `windows-latest`)
+- Windows `.exe` packaging requires a Windows host/runner for this task (no Wine-based cross-compilation path)
 - Deep link protocol: `fusion://`
 - Publish provider: GitHub (`gsxdsm/fusion`)
 
