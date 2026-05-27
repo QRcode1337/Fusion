@@ -566,6 +566,10 @@ export function registerChatRoutes(ctx: ApiRoutesContext, deps: ChatRouteDeps): 
         throw notFound(`Chat session ${sessionId} not found`);
       }
 
+      // Resolve per-project ChatManager before opening the SSE stream so
+      // failures (e.g. project DB cannot be opened) produce a proper HTTP error.
+      const chatManager = await resolveScopedChatManager(req.query.projectId as string | undefined);
+
       // Set SSE headers
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -601,9 +605,6 @@ export function registerChatRoutes(ctx: ApiRoutesContext, deps: ChatRouteDeps): 
           }
         }
       }
-
-      // Resolve per-project ChatManager (falls back to global when no projectId)
-      const chatManager = await resolveScopedChatManager(req.query.projectId as string | undefined);
 
       // Allocate a generation up front so subscription and sendMessage broadcasts
       // share the same id. This filters out stragglers from a prior, just-cancelled
