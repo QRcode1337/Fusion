@@ -104,6 +104,6 @@ export function dedupe<T>(
       if (inFlight.get(key) === entry) inFlight.delete(key);
     },
   );
-  inFlight.set(key, entry);
+  inFlight.set(key, entry as InFlightEntry<unknown>);
   return entry.external;
 }

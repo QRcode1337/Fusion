@@ -628,7 +628,7 @@ export const registerProjectRoutes: ApiRouteRegistrar = (ctx) => {
           throw notFound("Project not found");
         }
 
-        let transitionDeferred = false;
+        const transitionDeferred = false;
         const isolationChanged =
           isolationMode !== undefined && isolationMode !== existing.isolationMode;
 
