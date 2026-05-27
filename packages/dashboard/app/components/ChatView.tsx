@@ -946,6 +946,8 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
     stopStreaming,
     pendingMessage,
     clearPendingMessage,
+    loadMoreMessages,
+    hasMoreMessages,
     searchQuery,
     setSearchQuery,
     filteredSessions,
@@ -1031,6 +1033,7 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
   }, [fileMention.mentionActive]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
   const mobileSessionMenuRef = useRef<HTMLDivElement>(null);
   const roomSwitcherRef = useRef<HTMLDivElement>(null);
   const isUserScrollingRef = useRef(false);
@@ -1232,6 +1235,22 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
       }
     };
   }, []);
+
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || !hasMoreMessages) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          void loadMoreMessages();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreMessages, loadMoreMessages]);
 
   const getActiveThreadId = useCallback(() => {
     return roomThreadActive ? (rooms.activeRoom?.id ?? null) : (activeSession?.id ?? null);
@@ -3123,6 +3142,11 @@ export function ChatView({ projectId, addToast, experimentalFeatures }: ChatView
 
         {/* Messages */}
         <div className="chat-messages" ref={messagesContainerRef} onScroll={updateScrollState}>
+          <div ref={loadMoreSentinelRef} className="chat-load-more-sentinel">
+            {hasMoreMessages && messagesLoading && (
+              <div className="chat-loading-older">Loading older messages…</div>
+            )}
+          </div>
           {isStreaming ? (
             <>
               {messages.map((message) => (

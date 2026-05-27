@@ -454,15 +454,17 @@ export function useChat(
         const data = await fetchChatMessages(sessionId, { limit: 50, ...opts }, projectId);
         const mappedMessages = data.messages.map(mapChatMessageToInfo);
         if (isPaginationRequest) {
-          // Prepend older messages
-          setMessages((prev) => [...mappedMessages, ...prev]);
+          if (activeSessionRef.current?.id === sessionId) {
+            setMessages((prev) => [...mappedMessages, ...prev]);
+            setHasMoreMessages(data.messages.length >= 50);
+          }
         } else {
-          setMessages(mappedMessages);
-          if (cacheKey) {
-            writeCache(cacheKey, mappedMessages, { maxBytes: 500_000 });
+          if (activeSessionRef.current?.id === sessionId) {
+            setMessages(mappedMessages);
+            setHasMoreMessages(data.messages.length >= 50);
+            if (cacheKey) writeCache(cacheKey, mappedMessages, { maxBytes: 500_000 });
           }
         }
-        setHasMoreMessages(data.messages.length >= 50);
       } catch {
         if (!isPaginationRequest && messagesRef.current.length === 0 && hasCachedMessages) {
           setMessages(cachedMessages);
