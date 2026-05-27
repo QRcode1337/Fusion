@@ -116,6 +116,35 @@ describe("CustomProvidersSection", () => {
     });
   });
 
+  it("shows OpenAI Responses option and posts openai-responses apiType", async () => {
+    mockFetchCustomProviders.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    render(<CustomProvidersSection embedded />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Add Custom Provider/i })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Add Custom Provider/i }));
+
+    const apiTypeSelect = screen.getByLabelText("API type") as HTMLSelectElement;
+    expect(screen.getByRole("option", { name: "OpenAI Responses" })).toBeTruthy();
+    fireEvent.change(apiTypeSelect, { target: { value: "openai-responses" } });
+    expect(apiTypeSelect.value).toBe("openai-responses");
+
+    fireEvent.change(screen.getByLabelText("Provider name"), { target: { value: "Responses Provider" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://api.example.com/v1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Provider" }));
+
+    await waitFor(() => {
+      expect(mockAddCustomProvider).toHaveBeenCalledWith({
+        name: "Responses Provider",
+        apiType: "openai-responses",
+        baseUrl: "https://api.example.com/v1",
+      });
+    });
+  });
+
   it("shows validation errors for empty name and invalid baseUrl", async () => {
     render(<CustomProvidersSection embedded />);
 
@@ -136,6 +165,42 @@ describe("CustomProvidersSection", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Base URL must be a valid http/https URL.")).toBeTruthy();
+    });
+  });
+
+  it("normalizes legacy openai-responses api to apiType on edit", async () => {
+    mockFetchCustomProviders
+      .mockResolvedValueOnce([
+        {
+          id: "legacy-id",
+          name: "Legacy Responses",
+          baseUrl: "https://legacy.example.com/v1",
+          api: "openai-responses",
+          models: [{ id: "r1", name: "Responses 1" }],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "legacy-id",
+          name: "Legacy Responses",
+          apiType: "openai-responses",
+          baseUrl: "https://legacy.example.com/v1",
+        },
+      ]);
+
+    render(<CustomProvidersSection embedded />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Edit Legacy Responses")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText("Edit Legacy Responses"));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => {
+      expect(mockUpdateCustomProvider).toHaveBeenCalledWith("legacy-id", expect.objectContaining({
+        apiType: "openai-responses",
+      }));
     });
   });
 

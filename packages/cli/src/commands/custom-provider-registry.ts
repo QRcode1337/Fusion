@@ -1,4 +1,4 @@
-import type { CustomProvider } from "@fusion/core";
+import { customProviderRegistryKey, type CustomProvider } from "@fusion/core";
 
 interface ModelRegistryLike {
   registerProvider: (name: string, config: {
@@ -21,6 +21,9 @@ interface ModelRegistryLike {
 export function resolveApiType(apiType: string): string {
   if (apiType === "anthropic-compatible") {
     return "anthropic";
+  }
+  if (apiType === "openai-responses") {
+    return "openai-responses";
   }
   return "openai-completions";
 }
@@ -56,13 +59,15 @@ export function registerCustomProviders(
   customProviders: CustomProvider[] | undefined,
   logFn: (message: string) => void,
 ): void {
-  for (const provider of customProviders ?? []) {
+  const providers = customProviders ?? [];
+  for (const provider of providers) {
+    const registryKey = customProviderRegistryKey(provider, providers);
     try {
-      modelRegistry.registerProvider(provider.id, toProviderConfig(provider));
-      logFn(`Registered custom provider ${provider.id}`);
+      modelRegistry.registerProvider(registryKey, toProviderConfig(provider));
+      logFn(`Registered custom provider "${provider.name}" (key=${registryKey}, id=${provider.id})`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logFn(`Failed to register custom provider ${provider.id}: ${message}`);
+      logFn(`Failed to register custom provider "${provider.name}" (key=${registryKey}, id=${provider.id}): ${message}`);
     }
   }
 
@@ -76,19 +81,21 @@ export function reregisterCustomProviders(
   logFn: (message: string) => void,
 ): void {
   const previousById = new Map((previousProviders ?? []).map((provider) => [provider.id, provider]));
+  const providers = currentProviders ?? [];
 
-  for (const provider of currentProviders ?? []) {
+  for (const provider of providers) {
     const previous = previousById.get(provider.id);
     if (previous && !providersDiffer(previous, provider)) {
       continue;
     }
 
+    const registryKey = customProviderRegistryKey(provider, providers);
     try {
-      modelRegistry.registerProvider(provider.id, toProviderConfig(provider));
-      logFn(`${previous ? "Updated" : "Registered"} custom provider ${provider.id}`);
+      modelRegistry.registerProvider(registryKey, toProviderConfig(provider));
+      logFn(`${previous ? "Updated" : "Registered"} custom provider "${provider.name}" (key=${registryKey}, id=${provider.id})`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logFn(`Failed to register custom provider ${provider.id}: ${message}`);
+      logFn(`Failed to register custom provider "${provider.name}" (key=${registryKey}, id=${provider.id}): ${message}`);
     }
   }
 

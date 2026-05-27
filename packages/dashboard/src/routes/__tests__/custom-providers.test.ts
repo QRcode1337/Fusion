@@ -394,6 +394,38 @@ describe("POST /api/custom-providers/probe-models", () => {
     });
   });
 
+  it("routes openai-responses through the OpenAI-compatible probe branch", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "gpt-5", object: "model", owned_by: "system" },
+        ],
+      }),
+    });
+
+    const app = setupApp(createCustomProviderStore().store);
+    const res = await doRequest(app, "POST", "/api/custom-providers/probe-models", {
+      baseUrl: "https://api.openai.com/v1",
+      apiType: "openai-responses",
+      apiKey: "sk-test",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      count: 1,
+      models: [
+        { id: "gpt-5", name: "gpt-5", reasoning: false },
+      ],
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://api.openai.com/v1/models",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
+      }),
+    );
+  });
+
   it("returns Anthropic-compatible models", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,

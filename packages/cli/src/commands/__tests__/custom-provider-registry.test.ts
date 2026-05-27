@@ -10,6 +10,7 @@ describe("custom-provider-registry", () => {
   it.each([
     ["openai-compatible", "openai-completions"],
     ["anthropic-compatible", "anthropic"],
+    ["openai-responses", "openai-responses"],
   ])("resolveApiType maps %s -> %s", (apiType, expectedApi) => {
     expect(resolveApiType(apiType)).toBe(expectedApi);
   });
@@ -20,7 +21,7 @@ describe("custom-provider-registry", () => {
     const logFn = vi.fn();
     const providers: CustomProvider[] = [
       {
-        id: "openai-custom",
+        id: "550e8400-e29b-41d4-a716-446655440000",
         name: "OpenAI Custom",
         apiType: "openai-compatible",
         baseUrl: "https://example.test/v1",
@@ -28,7 +29,7 @@ describe("custom-provider-registry", () => {
         models: [{ id: "m1", name: "Model 1" }],
       },
       {
-        id: "anthropic-custom",
+        id: "660e8400-e29b-41d4-a716-446655440001",
         name: "Anthropic Custom",
         apiType: "anthropic-compatible",
         baseUrl: "https://anthropic.test",
@@ -54,6 +55,34 @@ describe("custom-provider-registry", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("uses slugified provider names and collision suffixes for registry keys", () => {
+    const registerProvider = vi.fn();
+    const refresh = vi.fn();
+
+    registerCustomProviders(
+      { registerProvider, refresh },
+      [
+        {
+          id: "dd0e8400-e29b-41d4-a716-446655440008",
+          name: "My AI Provider",
+          apiType: "openai-compatible",
+          baseUrl: "https://one.test",
+        },
+        {
+          id: "ee0e8400-e29b-41d4-a716-446655440009",
+          name: "My AI Provider",
+          apiType: "openai-compatible",
+          baseUrl: "https://two.test",
+        },
+      ],
+      vi.fn(),
+    );
+
+    expect(registerProvider).toHaveBeenNthCalledWith(1, "my-ai-provider", expect.any(Object));
+    expect(registerProvider).toHaveBeenNthCalledWith(2, "my-ai-provider-2", expect.any(Object));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("handles empty provider list and still refreshes", () => {
     const registerProvider = vi.fn();
     const refresh = vi.fn();
@@ -71,7 +100,7 @@ describe("custom-provider-registry", () => {
     registerCustomProviders(
       { registerProvider, refresh },
       [{
-        id: "no-models",
+        id: "770e8400-e29b-41d4-a716-446655440002",
         name: "No Models",
         apiType: "openai-compatible",
         baseUrl: "https://nomodels.test",
@@ -97,13 +126,13 @@ describe("custom-provider-registry", () => {
       { registerProvider, refresh },
       [
         {
-          id: "bad",
+          id: "880e8400-e29b-41d4-a716-446655440003",
           name: "Bad",
           apiType: "openai-compatible",
           baseUrl: "https://bad.test",
         },
         {
-          id: "good",
+          id: "990e8400-e29b-41d4-a716-446655440004",
           name: "Good",
           apiType: "openai-compatible",
           baseUrl: "https://good.test",
@@ -113,7 +142,7 @@ describe("custom-provider-registry", () => {
     );
 
     expect(registerProvider).toHaveBeenCalledTimes(2);
-    expect(logFn).toHaveBeenCalledWith(expect.stringContaining("Failed to register custom provider bad"));
+    expect(logFn).toHaveBeenCalledWith(expect.stringContaining("id=880e8400-e29b-41d4-a716-446655440003"));
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -123,10 +152,10 @@ describe("custom-provider-registry", () => {
 
     reregisterCustomProviders(
       { registerProvider, refresh },
-      [{ id: "old", name: "Old", apiType: "openai-compatible", baseUrl: "https://old.test" }],
+      [{ id: "aa0e8400-e29b-41d4-a716-446655440005", name: "Old", apiType: "openai-compatible", baseUrl: "https://old.test" }],
       [
-        { id: "old", name: "Old", apiType: "openai-compatible", baseUrl: "https://old.test" },
-        { id: "new", name: "New", apiType: "anthropic-compatible", baseUrl: "https://new.test" },
+        { id: "aa0e8400-e29b-41d4-a716-446655440005", name: "Old", apiType: "openai-compatible", baseUrl: "https://old.test" },
+        { id: "bb0e8400-e29b-41d4-a716-446655440006", name: "New", apiType: "anthropic-compatible", baseUrl: "https://new.test" },
       ],
       vi.fn(),
     );
@@ -142,13 +171,13 @@ describe("custom-provider-registry", () => {
 
     reregisterCustomProviders(
       { registerProvider, refresh },
-      [{ id: "same-id", name: "Provider", apiType: "openai-compatible", baseUrl: "https://one.test", apiKey: "A" }],
-      [{ id: "same-id", name: "Provider", apiType: "openai-compatible", baseUrl: "https://two.test", apiKey: "B" }],
+      [{ id: "cc0e8400-e29b-41d4-a716-446655440007", name: "Provider", apiType: "openai-compatible", baseUrl: "https://one.test", apiKey: "A" }],
+      [{ id: "cc0e8400-e29b-41d4-a716-446655440007", name: "Provider", apiType: "openai-compatible", baseUrl: "https://two.test", apiKey: "B" }],
       vi.fn(),
     );
 
     expect(registerProvider).toHaveBeenCalledTimes(1);
-    expect(registerProvider).toHaveBeenCalledWith("same-id", expect.objectContaining({
+    expect(registerProvider).toHaveBeenCalledWith("provider", expect.objectContaining({
       baseUrl: "https://two.test",
       apiKey: "B",
     }));

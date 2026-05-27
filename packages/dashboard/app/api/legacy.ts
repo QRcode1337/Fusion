@@ -1880,7 +1880,7 @@ export function setLlamaCppEnabled(
 export interface CustomProvider {
   id: string;
   name: string;
-  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai";
+  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai" | "openai-responses";
   baseUrl: string;
   apiKey?: string;
   models?: { id: string; name: string }[];
@@ -1894,6 +1894,7 @@ export async function fetchCustomProviders(): Promise<CustomProviderConfig[] & {
     baseUrl: provider.baseUrl,
     api: provider.apiType === "anthropic-compatible" ? "anthropic-messages"
       : provider.apiType === "google-generative-ai" ? "google-generative-ai"
+      : provider.apiType === "openai-responses" ? "openai-responses"
       : "openai-completions",
     apiKey: provider.apiKey,
     models: (provider.models ?? []).map((model) => ({ id: model.id, name: model.name })),
@@ -1927,7 +1928,10 @@ export function updateCustomProvider(
       : {}),
     ...(legacy.api
       ? {
-          apiType: legacy.api === "anthropic-messages" ? "anthropic-compatible" : "openai-compatible",
+          apiType: legacy.api === "anthropic-messages" ? "anthropic-compatible"
+            : legacy.api === "google-generative-ai" ? "google-generative-ai"
+            : legacy.api === "openai-responses" ? "openai-responses"
+            : "openai-compatible",
         }
       : {}),
     ...("apiType" in (updates as Record<string, unknown>)
@@ -1969,6 +1973,7 @@ export interface CustomProviderConfig {
 export function createCustomProvider(config: CustomProviderConfig): Promise<CustomProvider> {
   const apiType = config.api === "anthropic-messages" ? "anthropic-compatible"
     : config.api === "google-generative-ai" ? "google-generative-ai"
+    : config.api === "openai-responses" ? "openai-responses"
     : "openai-compatible";
   return addCustomProvider({
     name: config.name?.trim() || config.id,
@@ -2002,7 +2007,7 @@ export interface ProbeModelsResponse {
 export interface ProbeModelsParams {
   baseUrl: string;
   apiKey?: string;
-  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai";
+  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai" | "openai-responses";
 }
 
 export async function probeProviderModels(params: ProbeModelsParams): Promise<ProbeModelsResponse> {

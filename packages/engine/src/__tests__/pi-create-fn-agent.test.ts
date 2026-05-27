@@ -1124,12 +1124,20 @@ describe("createFnAgent", () => {
   it("registers custom providers from global settings", async () => {
     readCustomProvidersMock.mockReturnValue([
       {
-        id: "custom-openai",
+        id: "550e8400-e29b-41d4-a716-446655440000",
         name: "Custom OpenAI",
         apiType: "openai-compatible",
         baseUrl: "https://custom.example/v1",
         apiKey: "CUSTOM_API_KEY",
         models: [{ id: "custom-model", name: "Custom Model" }],
+      },
+      {
+        id: "660e8400-e29b-41d4-a716-446655440001",
+        name: "Custom Responses",
+        apiType: "openai-responses",
+        baseUrl: "https://responses.example/v1",
+        apiKey: "RESPONSES_API_KEY",
+        models: [{ id: "responses-model", name: "Responses Model" }],
       },
     ] as any);
 
@@ -1148,6 +1156,12 @@ describe("createFnAgent", () => {
       api: "openai-completions",
       apiKey: "CUSTOM_API_KEY",
       models: [expect.objectContaining({ id: "custom-model", name: "Custom Model" })],
+    }));
+    expect(registerProviderMock).toHaveBeenCalledWith("custom-responses", expect.objectContaining({
+      baseUrl: "https://responses.example/v1",
+      api: "openai-responses",
+      apiKey: "RESPONSES_API_KEY",
+      models: [expect.objectContaining({ id: "responses-model", name: "Responses Model" })],
     }));
   });
 

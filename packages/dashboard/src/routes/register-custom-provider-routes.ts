@@ -46,8 +46,13 @@ function assertNonEmptyString(value: unknown, fieldName: string): string {
  * @throws {ApiError} with status 400 if the type is not recognized.
  */
 function assertApiType(value: unknown): CustomProvider["apiType"] {
-  if (value !== "openai-compatible" && value !== "anthropic-compatible" && value !== "google-generative-ai") {
-    throw badRequest("apiType must be 'openai-compatible', 'anthropic-compatible', or 'google-generative-ai'");
+  if (
+    value !== "openai-compatible" &&
+    value !== "anthropic-compatible" &&
+    value !== "google-generative-ai" &&
+    value !== "openai-responses"
+  ) {
+    throw badRequest("apiType must be 'openai-compatible', 'anthropic-compatible', 'google-generative-ai', or 'openai-responses'");
   }
   return value;
 }
@@ -144,7 +149,7 @@ interface ProbeModelResult {
 
 const MAX_PROBE_MODELS = 100;
 
-type ProbeApiType = "openai-compatible" | "anthropic-compatible" | "google-generative-ai";
+type ProbeApiType = "openai-compatible" | "anthropic-compatible" | "google-generative-ai" | "openai-responses";
 
 /**
  * Check if a model should be excluded (embedding / reranking / audio-only / no-text-input models).
@@ -272,7 +277,7 @@ async function probeProviderModels(
     "User-Agent": "Fusion/1.0",
   };
 
-  if (apiType === "openai-compatible") {
+  if (apiType === "openai-compatible" || apiType === "openai-responses") {
     // OpenAI-compatible: /v1/models relative to baseUrl
     const pathname = url.pathname.replace(/\/+$/, "");
     const modelsPath = pathname ? pathname + "/models" : "/models";
@@ -560,10 +565,11 @@ export const registerCustomProviderRoutes: ApiRouteRegistrar = (ctx) => {
       if (
         rawApiType !== "openai-compatible" &&
         rawApiType !== "anthropic-compatible" &&
-        rawApiType !== "google-generative-ai"
+        rawApiType !== "google-generative-ai" &&
+        rawApiType !== "openai-responses"
       ) {
         throw badRequest(
-          "apiType must be 'openai-compatible', 'anthropic-compatible', or 'google-generative-ai'",
+          "apiType must be 'openai-compatible', 'anthropic-compatible', 'google-generative-ai', or 'openai-responses'",
         );
       }
       const apiType = rawApiType as ProbeApiType;

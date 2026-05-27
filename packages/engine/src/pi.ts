@@ -34,7 +34,7 @@ import {
   type AgentSession,
   type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
-import { getEnabledPiExtensionPaths, getFusionAgentDir, getLegacyPiAgentDir, getProjectRootFromWorktree, reconcileClaudeCliPaths, reconcileDroidCliPaths, resolvePiExtensionProjectRoot } from "@fusion/core";
+import { customProviderRegistryKey, getEnabledPiExtensionPaths, getFusionAgentDir, getLegacyPiAgentDir, getProjectRootFromWorktree, reconcileClaudeCliPaths, reconcileDroidCliPaths, resolvePiExtensionProjectRoot } from "@fusion/core";
 import type {
   AgentPermissionPolicyActionCategory,
   PermanentAgentActionCategory,
@@ -1675,11 +1675,15 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
   const resolvedProjectRoot = getProjectRootFromWorktree(options.cwd) ?? resolvePiExtensionProjectRoot(options.cwd);
   await registerExtensionProviders(resolvedProjectRoot, modelRegistry);
 
-  for (const provider of readCustomProviders()) {
+  const customProviders = readCustomProviders();
+  for (const provider of customProviders) {
     try {
-      modelRegistry.registerProvider(provider.id, {
+      const registryKey = customProviderRegistryKey(provider, customProviders);
+      modelRegistry.registerProvider(registryKey, {
         baseUrl: provider.baseUrl,
-        api: provider.apiType === "anthropic-compatible" ? "anthropic" : "openai-completions",
+        api: provider.apiType === "anthropic-compatible" ? "anthropic"
+          : provider.apiType === "openai-responses" ? "openai-responses"
+          : "openai-completions",
         apiKey: provider.apiKey,
         models: (provider.models ?? []).map((model) => ({
           id: model.id,
@@ -1696,10 +1700,11 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
           maxTokens: 16384,
         })),
       });
-      piLog.log(`Registered custom provider ${provider.id}`);
+      piLog.log(`Registered custom provider "${provider.name}" (key=${registryKey}, id=${provider.id})`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      piLog.warn(`Failed to register custom provider ${provider.id}: ${message}`);
+      const registryKey = customProviderRegistryKey(provider, customProviders);
+      piLog.warn(`Failed to register custom provider "${provider.name}" (key=${registryKey}, id=${provider.id}): ${message}`);
     }
   }
   modelRegistry.refresh();

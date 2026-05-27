@@ -495,7 +495,7 @@ export interface NotificationProviderConfig {
 export interface CustomProvider {
   id: string;
   name: string;
-  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai";
+  apiType: "openai-compatible" | "anthropic-compatible" | "google-generative-ai" | "openai-responses";
   baseUrl: string;
   apiKey?: string;
   models?: { id: string; name: string }[];

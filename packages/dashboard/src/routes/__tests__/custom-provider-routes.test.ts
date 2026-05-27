@@ -193,6 +193,27 @@ describe("custom provider routes", () => {
     expect(res.status).toBe(400);
   });
 
+  it("POST /custom-providers accepts openai-responses apiType", async () => {
+    const app = createApp(settings);
+    const createRes = await REQUEST(app, "POST", "/api/custom-providers", {
+      name: "Responses Provider",
+      apiType: "openai-responses",
+      baseUrl: "https://responses.example.com/v1",
+    });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.apiType).toBe("openai-responses");
+
+    const listRes = await REQUEST(app, "GET", "/api/custom-providers");
+    expect(listRes.status).toBe(200);
+    expect(listRes.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "Responses Provider",
+        apiType: "openai-responses",
+      }),
+    ]));
+  });
+
   it("POST /custom-providers rejects invalid apiType", async () => {
     const app = createApp(settings);
     const res = await REQUEST(app, "POST", "/api/custom-providers", {
@@ -239,6 +260,7 @@ describe("custom provider routes", () => {
     const app = createApp(settings);
     const res = await REQUEST(app, "PUT", "/api/custom-providers/cp-1", {
       name: "Updated",
+      apiType: "openai-responses",
       apiKey: "sk-updated-9999",
     });
 
@@ -246,7 +268,7 @@ describe("custom provider routes", () => {
     expect(res.body).toMatchObject({
       id: "cp-1",
       name: "Updated",
-      apiType: "openai-compatible",
+      apiType: "openai-responses",
       baseUrl: "https://original.example.com",
       apiKey: "sk-•••••9999",
     });

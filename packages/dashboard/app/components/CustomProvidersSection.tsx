@@ -13,7 +13,7 @@ import "./CustomProvidersSection.css";
 
 type ProviderApiType = CustomProvider["apiType"];
 
-const API_TYPES: ProviderApiType[] = ["openai-compatible", "anthropic-compatible", "google-generative-ai"];
+const API_TYPES: ProviderApiType[] = ["openai-compatible", "openai-responses", "anthropic-compatible", "google-generative-ai"];
 
 type LegacyProvider = {
   id: string;
@@ -37,7 +37,10 @@ function normalizeProviders(result: Awaited<ReturnType<typeof fetchCustomProvide
     return {
       id: provider.id,
       name: provider.name?.trim() || provider.id,
-      apiType: provider.api === "anthropic-messages" ? "anthropic-compatible" : "openai-compatible",
+      apiType: provider.api === "anthropic-messages" ? "anthropic-compatible"
+        : provider.api === "openai-responses" ? "openai-responses"
+        : provider.api === "google-generative-ai" ? "google-generative-ai"
+        : "openai-compatible",
       baseUrl: provider.baseUrl,
       ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
       models: (provider.models ?? []).map((model) => ({
@@ -338,6 +341,7 @@ export function CustomProvidersSection({ embedded = false, onProviderChange }: C
                         disabled={saving}
                       >
                         <option value="openai-compatible">OpenAI-compatible</option>
+                        <option value="openai-responses">OpenAI Responses</option>
                         <option value="anthropic-compatible">Anthropic-compatible</option>
                       </select>
                     </div>
@@ -453,6 +457,7 @@ export function CustomProvidersSection({ embedded = false, onProviderChange }: C
               disabled={saving}
             >
               <option value="openai-compatible">OpenAI-compatible</option>
+              <option value="openai-responses">OpenAI Responses</option>
               <option value="anthropic-compatible">Anthropic-compatible</option>
             </select>
           </div>
