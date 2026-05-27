@@ -1,6 +1,6 @@
 # Code Signing Setup Guide
 
-This document explains how to configure code signing for `kb` release binaries so they don't trigger OS security warnings on macOS (Gatekeeper) or Windows (SmartScreen).
+This document explains how to configure code signing for `kb` release binaries so they don't trigger OS security warnings on macOS (Gatekeeper) or Windows (SmartScreen), and how Linux desktop artifact signatures are published for authenticity verification.
 
 ## Overview
 
@@ -8,7 +8,7 @@ The release workflow automatically signs binaries when the appropriate secrets a
 
 - **macOS**: Codesign with hardened runtime + Apple notarization
 - **Windows**: Authenticode signing with timestamp
-- **Linux**: No signing (no standard code signing requirement for Linux CLI tools)
+- **Linux**: GPG detached-signature signing of `.AppImage` / `.deb` / `.tar.gz` desktop artifacts
 
 Signing is **optional** — if secrets are not configured, the build succeeds and signing steps are skipped.
 
@@ -31,6 +31,14 @@ Signing is **optional** — if secrets are not configured, the build succeeds an
 |--------|-------------|
 | `WINDOWS_CERTIFICATE_BASE64` | Base64-encoded `.pfx` Authenticode code signing certificate |
 | `WINDOWS_CERTIFICATE_PASSWORD` | Password for the `.pfx` certificate |
+
+### Linux Signing
+
+| Secret | Description |
+|--------|-------------|
+| `LINUX_GPG_PRIVATE_KEY` | Base64 of an ASCII-armored exported private key (`gpg --armor --export-secret-keys`) |
+| `LINUX_GPG_PASSPHRASE` | Passphrase that unlocks the exported private key |
+| `LINUX_GPG_KEY_ID` | Long key ID or full fingerprint used with `gpg --local-user` |
 
 ## macOS Setup Instructions
 
@@ -71,6 +79,53 @@ You can find it by running:
 security find-identity -v -p codesigning
 ```
 
+## Linux Signing
+
+### 1. Generate a release signing key
+
+```bash
+gpg --full-generate-key
+```
+
+Recommended: RSA 4096, with either no expiration or a 2-year expiration.
+
+### 2. Export and base64-encode the private key for GitHub Actions secret storage
+
+```bash
+gpg --armor --export-secret-keys <key-id> | base64 -w0 | pbcopy
+```
+
+Linux clipboard alternative:
+
+```bash
+gpg --armor --export-secret-keys <key-id> | base64 -w0 | xclip -selection clipboard
+```
+
+Store this output as `LINUX_GPG_PRIVATE_KEY`.
+
+### 3. Set Linux signing secrets
+
+Set repository-level Actions secrets:
+- `LINUX_GPG_PRIVATE_KEY`
+- `LINUX_GPG_PASSPHRASE`
+- `LINUX_GPG_KEY_ID`
+
+### 4. Publish the public key for users
+
+Export and publish the public key in release notes and/or a repository `KEYS` file:
+
+```bash
+gpg --armor --export <key-id>
+```
+
+### 5. User verification flow
+
+```bash
+gpg --import KEYS && gpg --verify Fusion-<version>-linux-x64.AppImage.asc Fusion-<version>-linux-x64.AppImage
+```
+
+If `LINUX_GPG_PRIVATE_KEY` is absent (forks/initial setup), CI continues and ships unsigned Linux artifacts without `.asc` sidecars.
+
 ## Windows Setup Instructions
 
 ### 1. Obtain an Authenticode Code Signing Certificate
@@ -104,8 +159,9 @@ Paste the result as the `WINDOWS_CERTIFICATE_BASE64` secret.
 2. Each platform job builds the standalone binary
 3. **macOS jobs**: `scripts/sign-macos.sh` runs codesign + notarization
 4. **Windows jobs**: `scripts/sign-windows.ps1` runs Authenticode signing
-5. Checksums are generated **after** signing (so they match the signed binaries)
-6. Signed binaries and checksums are uploaded to the GitHub Release
+5. **Linux desktop jobs**: `scripts/sign-linux.sh` runs `gpg --detach-sign --armor` for each `.AppImage` / `.deb` / `.tar.gz` artifact and verifies each signature with `gpg --verify`
+6. Checksums are generated **after** signing (so they match the signed binaries)
+7. Signed binaries and checksums are uploaded to the GitHub Release
 
 The test-release workflow (`workflow_dispatch`) includes the same signing steps but guards them with secret-availability checks — signing is skipped if secrets are not configured.
 
@@ -138,6 +194,21 @@ Desktop Windows packaging (`.github/workflows/desktop-windows.yml`) now uses the
 ### Windows: "The specified PFX password is not correct"
 
 - Double-check the `WINDOWS_CERTIFICATE_PASSWORD` secret matches the password used when exporting the `.pfx`
+
+### Linux signing skipped
+
+- Expected when `LINUX_GPG_PRIVATE_KEY` is not set (forks, dry runs, first-time setup)
+- In this path, Linux artifacts upload without `.asc` sidecars by design
+
+### Linux signing fails with "No secret key"
+
+- `LINUX_GPG_KEY_ID` does not match the imported private key fingerprint/key ID
+- Re-export and re-check key ID via `gpg --list-secret-keys --keyid-format=long`
+
+### Linux verification fails with "BAD signature"
+
+- Artifact changed between sign and verify; investigate runner storage path and artifact staging
+- Ensure signatures are generated from the exact file that is later uploaded
 
 ### Signing step skipped
 

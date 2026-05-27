@@ -357,8 +357,20 @@ Desktop packaging is configured in `electron-builder.yml`.
   - macOS: `Fusion-<version>-mac-arm64.dmg`, `Fusion-<version>-mac-x64.dmg`, matching `.zip` variants, `.sha256` sidecars, and `.blockmap` files.
   - Linux: `Fusion-<version>-linux-x64.AppImage` with `.sha256`, plus best-effort `.deb` and `.tar.gz` outputs (and sidecars) when available on the runner image.
 - Tag-less release rehearsal workflow (`.github/workflows/test-release.yml`) mirrors that artifact collection path without publishing a real GitHub Release.
-- macOS Developer ID signing/notarization and Linux signing are not wired in these release jobs yet; release-attached macOS/Linux artifacts are currently unsigned and follow-up tasks will add signing flows.
+- Linux desktop artifacts now include detached GPG signature sidecars: `*.AppImage.asc`, `*.deb.asc`, and `*.tar.gz.asc` when Linux signing secrets are configured in CI.
 - Linux `.deb` and `.tar.gz` outputs are best-effort and may be absent on some runner images without failing the release.
+
+### Linux signing
+
+Every signed Linux desktop release includes `*.asc` detached signature sidecars alongside the binary artifacts.
+
+Verification example:
+
+```bash
+gpg --import KEYS && gpg --verify Fusion-<version>-linux-x64.AppImage.asc Fusion-<version>-linux-x64.AppImage
+```
+
+The public key (`KEYS`) must be distributed out-of-band. See `docs/CODE_SIGNING.md` for canonical setup, key publication, and troubleshooting guidance.
 - Isolated manual Windows build path: `.github/workflows/desktop-windows.yml` (`workflow_dispatch` on `windows-latest`) runs `electron-builder --win --x64 --arm64 --publish never`.
 - ARM64 artifacts are cross-built on the `windows-latest` x64 runner; execution/validation still requires a Windows ARM64 device or emulator.
 - Deep link protocol: `fusion://`

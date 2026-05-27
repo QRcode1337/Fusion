@@ -255,6 +255,22 @@ jobs:
             exit 1
           fi
 
+      - name: Sign Linux desktop artifacts
+        if: ${{ env.LINUX_GPG_PRIVATE_KEY != '' }}
+        env:
+          LINUX_GPG_PRIVATE_KEY: ${{ secrets.LINUX_GPG_PRIVATE_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          LINUX_GPG_KEY_ID: ${{ secrets.LINUX_GPG_KEY_ID }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          artifacts=(
+            packages/desktop/dist-electron/Fusion-*-linux-*.AppImage
+            packages/desktop/dist-electron/Fusion-*-linux-*.deb
+            packages/desktop/dist-electron/Fusion-*-linux-*.tar.gz
+          )
+          bash scripts/sign-linux.sh "${artifacts[@]}"
+
       - name: Generate desktop Linux checksums
         shell: bash
         run: |
@@ -271,10 +287,13 @@ jobs:
           path: |
             packages/desktop/dist-electron/Fusion-*-linux-*.AppImage
             packages/desktop/dist-electron/Fusion-*-linux-*.AppImage.sha256
+            packages/desktop/dist-electron/Fusion-*-linux-*.AppImage.asc
             packages/desktop/dist-electron/Fusion-*-linux-*.deb
             packages/desktop/dist-electron/Fusion-*-linux-*.deb.sha256
+            packages/desktop/dist-electron/Fusion-*-linux-*.deb.asc
             packages/desktop/dist-electron/Fusion-*-linux-*.tar.gz
             packages/desktop/dist-electron/Fusion-*-linux-*.tar.gz.sha256
+            packages/desktop/dist-electron/Fusion-*-linux-*.tar.gz.asc
 
   # ── Collect all artifacts ─────────────────────────────────────────────
   collect:
@@ -291,7 +310,7 @@ jobs:
       - name: Combine artifacts
         run: |
           mkdir combined
-          find artifacts -type f \( -name "fn-*" -o -name "*.sha256" -o -name "*.exe" -o -name "*.exe.sha256" -o -name "*.blockmap" -o -name "*.dmg" -o -name "*.dmg.sha256" -o -name "*.zip" -o -name "*.zip.sha256" -o -name "*.AppImage" -o -name "*.AppImage.sha256" -o -name "*.deb" -o -name "*.deb.sha256" -o -name "*.tar.gz" -o -name "*.tar.gz.sha256" \) -exec cp {} combined/ \;
+          find artifacts -type f \( -name "fn-*" -o -name "*.sha256" -o -name "*.asc" -o -name "*.exe" -o -name "*.exe.sha256" -o -name "*.blockmap" -o -name "*.dmg" -o -name "*.dmg.sha256" -o -name "*.zip" -o -name "*.zip.sha256" -o -name "*.AppImage" -o -name "*.AppImage.sha256" -o -name "*.deb" -o -name "*.deb.sha256" -o -name "*.tar.gz" -o -name "*.tar.gz.sha256" \) -exec cp {} combined/ \;
           ls -la combined/
 
       - name: Upload combined archive

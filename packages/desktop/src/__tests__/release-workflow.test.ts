@@ -59,3 +59,44 @@ describe("desktop release workflow wiring", () => {
     );
   });
 });
+
+describe("desktop linux signing wiring", () => {
+  it("wires Linux GPG secret-guarded signing and asc uploads in both workflows", async () => {
+    const release = await readRepoFile(".github/workflows/release.yml");
+    const testRelease = await readRepoFile(".github/workflows/test-release.yml");
+
+    for (const workflow of [release, testRelease]) {
+      expect(workflow).toContain("secrets.LINUX_GPG_PRIVATE_KEY");
+      expect(workflow).toContain("secrets.LINUX_GPG_PASSPHRASE");
+      expect(workflow).toContain("secrets.LINUX_GPG_KEY_ID");
+      expect(workflow).toContain("LINUX_GPG_PRIVATE_KEY != ''");
+      expect(workflow).toContain("scripts/sign-linux.sh");
+      expect(workflow).toContain("Fusion-*-linux-*.AppImage.asc");
+      expect(workflow).toContain("Fusion-*-linux-*.deb.asc");
+      expect(workflow).toContain("Fusion-*-linux-*.tar.gz.asc");
+      expect(workflow).not.toMatch(/echo\s+["']?\$\{?\s*(secrets\.)?LINUX_GPG_PASSPHRASE/);
+      expect(workflow).not.toMatch(/cat\s+["']?\$\{?\s*(secrets\.)?LINUX_GPG_PASSPHRASE/);
+    }
+  });
+
+  it("collectors in both workflows include asc signatures", async () => {
+    const release = await readRepoFile(".github/workflows/release.yml");
+    const testRelease = await readRepoFile(".github/workflows/test-release.yml");
+
+    expect(release).toContain('-name "*.asc"');
+    expect(testRelease).toContain('-name "*.asc"');
+  });
+
+  it("sign-linux.sh contains expected guarded gpg sign and verify shape", async () => {
+    const script = await readRepoFile("scripts/sign-linux.sh");
+
+    expect(script).toContain("set -euo pipefail");
+    expect(script).toContain("LINUX_GPG_PRIVATE_KEY");
+    expect(script).toContain("LINUX_GPG_PASSPHRASE");
+    expect(script).toContain("LINUX_GPG_KEY_ID");
+    expect(script).toContain("gpg --verify");
+    expect(script).toContain("--detach-sign");
+    expect(script).toContain("--armor");
+    expect(script).toContain("Linux signing skipped (LINUX_GPG_PRIVATE_KEY not set)");
+  });
+});
