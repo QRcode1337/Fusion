@@ -1464,6 +1464,23 @@ describe("TaskCard", () => {
       expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     });
 
+    it("does not render card-error banner for auto-recovered transient row", () => {
+      const { container } = render(
+        <TaskCard
+          task={makeTask({
+            column: "todo",
+            status: undefined,
+            error: undefined,
+            log: [{ timestamp: new Date().toISOString(), action: "Auto-recovered: retry/verification session targeted unusable worktree" }],
+          })}
+          onOpenDetail={noop}
+          addToast={noop}
+        />,
+      );
+
+      expect(container.querySelector(".card-error")).toBeNull();
+    });
+
     it("calls onRetryTask with task id", async () => {
       const onRetryTask = vi.fn(async () => ({}) as Task);
       render(

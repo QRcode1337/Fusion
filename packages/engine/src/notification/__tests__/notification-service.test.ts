@@ -113,6 +113,32 @@ describe("NotificationService deferred failure notifications", () => {
     await service.stop();
   });
 
+  it("suppresses transient missing task.json failure after Auto-recovered clear", async () => {
+    const { store, service, sendNotification } = await setup();
+    store.setTask(task({
+      id: "FN-1",
+      status: "failed",
+      error: "ENOENT: no such file or directory, open '/tmp/worktrees/fn-1/.fusion/tasks/FN-1/task.json'",
+    }));
+    store.emit("task:updated", task({ id: "FN-1", status: "failed" }));
+
+    const recoveredTask = task({
+      id: "FN-1",
+      status: undefined,
+      error: undefined,
+      column: "todo",
+      log: [{ timestamp: new Date().toISOString(), action: "Auto-recovered: retry/verification session targeted unusable worktree" }],
+    });
+    store.setTask(recoveredTask);
+    store.emit("task:moved", { task: recoveredTask, from: "in-progress", to: "todo" });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(sendNotification).not.toHaveBeenCalledWith("failed", expect.anything());
+    expect((await store.getTask("FN-1"))?.status).not.toBe("failed");
+    expect(service.getMetrics().failureNotificationSuppressedCount).toBe(1);
+    await service.stop();
+  });
+
   it("Recovery via task:moved to done suppresses failed notification", async () => {
     const { store, service, sendNotification } = await setup();
     store.setTask(task({ id: "FN-1", status: "failed", column: "in-review" }));

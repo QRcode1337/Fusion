@@ -9,7 +9,7 @@ import { delimiter, isAbsolute, join, relative, resolve as resolvePath } from "n
 import { existsSync, realpathSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import type { TaskStore, Task, TaskDetail, TaskTokenUsage, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext, AgentHeartbeatConfig, Agent, AgentMemoryInclusionMode, ProjectSettings } from "@fusion/core";
-import { RetryStormError, serializeRetryStormError } from "@fusion/core";
+import { RetryStormError, TaskDeletedError, serializeRetryStormError } from "@fusion/core";
 import {
   ApprovalRequestStore,
   buildExecutionMemoryInstructions,
@@ -221,6 +221,33 @@ const COMPLETED_TASK_WATCHDOG_MS = 60_000;
 const WORKFLOW_RERUN_WATCHDOG_MS = 15_000;
 
 const TASK_DONE_REFUSAL_SUFFIX = "Either finish the work and resubmit, or do not call fn_task_done — exit the session and the engine will requeue.";
+
+const TRANSIENT_WORKTREE_TASK_JSON_ENOENT_PATTERN = /ENOENT:\s+no such file or directory,\s+open\s+'([^']+\/\.fusion\/tasks\/([^/]+)\/task\.json)'/;
+
+export function isTransientMissingTaskJsonError(error: unknown, task: Pick<Task, "id" | "worktree">): boolean {
+  if (error instanceof TaskDeletedError) {
+    return false;
+  }
+  const message = typeof error === "string"
+    ? error
+    : error instanceof Error
+      ? error.message
+      : "";
+  const match = TRANSIENT_WORKTREE_TASK_JSON_ENOENT_PATTERN.exec(message);
+  if (!match) {
+    return false;
+  }
+  const [, filePath, taskIdFromPath] = match;
+  if (taskIdFromPath !== task.id) {
+    return false;
+  }
+  if (typeof task.worktree !== "string" || task.worktree.length === 0) {
+    return false;
+  }
+  const normalizedWorktree = resolvePath(task.worktree);
+  const normalizedTaskJsonPath = resolvePath(filePath);
+  return normalizedTaskJsonPath.startsWith(`${normalizedWorktree}/`);
+}
 
 export const DISSENT_PATTERNS: RegExp[] = [
   /\btask (is|was)(?: not|n['’]?t) complete\b/i,
@@ -9027,10 +9054,19 @@ Backward compat fallback: if JSON is unavailable, you may still begin output wit
     audit: RunAuditor,
   ): Promise<boolean> {
     const errorText = error instanceof Error ? error.message : String(error);
-    if (!isMissingWorktreeSessionStartFailure(errorText)) return false;
+    const missingWorktreeFailure = isMissingWorktreeSessionStartFailure(errorText);
+    const missingTaskJsonFailure = isTransientMissingTaskJsonError(error, task);
+    if (!missingWorktreeFailure && !missingTaskJsonFailure) return false;
 
     const classification = classifyMissingWorktreeSessionStartFailure(errorText);
-    const staleWorktreePath = extractMissingWorktreePathFromSessionStartFailure(errorText) ?? worktreePath;
+    const missingTaskJsonPath = errorText.match(TRANSIENT_WORKTREE_TASK_JSON_ENOENT_PATTERN)?.[1] ?? null;
+    const staleWorktreePath = extractMissingWorktreePathFromSessionStartFailure(errorText)
+      ?? (missingTaskJsonPath ? resolvePath(missingTaskJsonPath, "..", "..", "..") : null)
+      ?? worktreePath;
+
+    if (missingTaskJsonFailure) {
+      executorLog.log(`[transient-task-json-suppressed] taskId=${task.id} elapsedMs=0 reason=missing-task-json-under-worktree path=${missingTaskJsonPath ?? "unknown"}`);
+    }
 
     await audit.git({
       type: "worktree:incomplete-detected",
